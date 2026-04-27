@@ -1,225 +1,204 @@
-# 📘 SentinelX – Database Schema & Data Dictionary
-
-## 🧠 Overview
-
-The SentinelX database is designed to support a **log-based intrusion detection system (IDS)** with an asynchronous, job-driven processing pipeline. The schema ensures:
-
-* Efficient handling of high-volume log data
-* Clear tracking of processing stages
-* Flexible storage for diverse log formats
-* Scalable and production-ready architecture
-
-### Storage Strategy
-
-SentinelX uses a **hybrid storage model**:
-
-* **Raw logs** → stored in file storage (local disk or cloud)
-* **Normalized logs** → stored in PostgreSQL
-* **Insights** → stored in PostgreSQL (with flexible JSON structure)
+# 📘 SentinelX – Database Schema & Data Dictionary (Final)
 
 ---
 
-# 🧱 Core Data Model
+# 1. Overview
 
-```text
+The SentinelX database is designed to support a **log-based intrusion detection system (IDS)** with an asynchronous, job-driven processing pipeline.
+
+This schema is aligned with:
+
+* API layer (job-based async model)
+* Processing pipeline (stage-based execution)
+* System state modeling (status, stage, outcome)
+
+---
+
+# 2. Storage Strategy
+
+SentinelX uses a **hybrid storage model**:
+
+* Raw logs → stored in file storage (disk / cloud)
+* Normalized logs → stored in PostgreSQL
+* Insights → stored in PostgreSQL (JSONB supported)
+
+---
+
+# 3. Core Data Model
+
+```
 jobs (1) ────< normalized_logs (many)
   │
   └────< insights (many)
 ```
 
-* One **job** represents one uploaded file
-* One job produces many **normalized logs**
-* One job produces many **insights**
-
 ---
 
-# 📂 1. jobs Table
+# 4. jobs Table
 
-## 🧠 Purpose
+## Purpose
 
 The `jobs` table is the **central control entity** of SentinelX.
 
-It is responsible for:
+It tracks:
 
-* Tracking file uploads
-* Managing asynchronous processing
-* Maintaining pipeline state (checkpoint system)
-* Handling failures and retries
-
-Every upload creates exactly **one job**, which becomes the reference point for all logs and insights.
+* Upload lifecycle
+* Processing pipeline state
+* Progress tracking
+* Failure & retry handling
 
 ---
 
-## ⚙️ Behavior
+## State Modeling (Critical)
 
-* Created immediately after file upload
-* Updated by background workers at each pipeline stage
-* Queried by frontend for:
+SentinelX separates three independent concepts:
 
-  * status tracking
-  * progress monitoring
-  * result retrieval
+### 1. Job Status (Lifecycle)
 
----
+```
+UPLOADED
+PROCESSING
+COMPLETED
+FAILED
+```
 
-## 📊 Data Dictionary
+### 2. Pipeline Stage (Execution Progress)
 
-| Field                | Type                 | Description                                      |
-| -------------------- | -------------------- | ------------------------------------------------ |
-| id                   | UUID                 | Unique identifier for the job                    |
-| file_path            | TEXT                 | Path to raw log file in storage                  |
-| file_name            | TEXT                 | Original uploaded file name                      |
-| file_size            | BIGINT               | Size of file in bytes                            |
-| status               | VARCHAR              | High-level state (processing, completed, failed) |
-| current_stage        | VARCHAR              | Current stage in pipeline                        |
-| last_completed_stage | VARCHAR              | Last successfully completed stage                |
-| progress             | INT                  | Progress percentage (0–100)                      |
-| error_message        | TEXT                 | Error details if job fails                       |
-| retry_count          | INT                  | Number of retry attempts                         |
-| created_at           | TIMESTAMP            | Job creation time                                |
-| updated_at           | TIMESTAMP            | Last update time                                 |
-| deleted_at           | TIMESTAMP (nullable) | Reserved for future soft delete                  |
+```
+PARSE
+NORMALIZE
+ANALYZE
+INSIGHTS
+```
 
----
+* Stored as `last_completed_stage`
+* Represents last successfully finished stage
+* Current stage is derived dynamically
 
-# 📂 2. normalized_logs Table
+### 3. Result Outcome (Final Quality)
 
-## 🧠 Purpose
+```
+SUCCESS
+WARNING
+```
 
-The `normalized_logs` table stores **structured log events** after parsing and normalization.
-
-Each row represents a **single log event**, making it highly queryable and suitable for analysis.
-
-This table is optimized for:
-
-* Filtering (by IP, time, type)
-* Aggregation (counts, trends)
-* Feeding analyzers
+* Only applicable when status = COMPLETED
+* SUCCESS → full success
+* WARNING → partial issues (e.g. ML failure)
 
 ---
 
-## ⚙️ Behavior
+## Data Dictionary
 
-* Populated during worker processing
-* Each log line → one row
-* Used by analyzers and insight generation
-
----
-
-## 📊 Data Dictionary
-
-| Field      | Type      | Description                              |
-| ---------- | --------- | ---------------------------------------- |
-| id         | UUID      | Unique identifier for log entry          |
-| job_id     | UUID      | Foreign key referencing jobs.id          |
-| timestamp  | TIMESTAMP | Event timestamp                          |
-| source     | VARCHAR   | Log source (nginx, auth, system)         |
-| event_type | VARCHAR   | Type of event (request, login, error)    |
-| ip_address | VARCHAR   | IP address associated with event         |
-| severity   | VARCHAR   | Severity level (info, warning, critical) |
-| metadata   | JSONB     | Flexible data for type-specific fields   |
-| created_at | TIMESTAMP | Record creation time                     |
+| Field                | Type            | Description                        |
+| -------------------- | --------------- | ---------------------------------- |
+| id                   | UUID            | Unique job ID                      |
+| file_path            | TEXT            | File storage path                  |
+| file_name            | TEXT            | Original file name                 |
+| file_size            | BIGINT          | File size in bytes                 |
+| status               | ENUM            | Job lifecycle state                |
+| last_completed_stage | ENUM            | Last completed pipeline stage      |
+| outcome              | ENUM (nullable) | Result quality (SUCCESS / WARNING) |
+| progress             | INT             | Progress (0–100)                   |
+| error_message        | TEXT            | Failure reason                     |
+| retry_count          | INT             | Retry attempts                     |
+| created_at           | TIMESTAMP       | Creation time                      |
+| updated_at           | TIMESTAMP       | Last update                        |
+| deleted_at           | TIMESTAMP       | Reserved for soft delete           |
 
 ---
 
-# 📂 3. insights Table
+## Important Notes
 
-## 🧠 Purpose
-
-The `insights` table stores **final analytical outputs** generated by analyzers.
-
-These insights are designed to be:
-
-* Human-readable
-* Visualization-ready
-* Flexible for multiple formats
-
-They represent the **end result of processing**, not intermediate data.
+* `current_stage` is NOT stored (derived from last_completed_stage)
+* Prevents inconsistency and duplication
 
 ---
 
-## ⚙️ Behavior
+# 5. normalized_logs Table
 
-* Generated after analysis phase
-* Multiple insights per job
-* Used directly by frontend for:
+## Purpose
 
-  * dashboards
-  * charts
-  * alerts
+Stores structured log events after parsing and normalization.
 
 ---
 
-## 📊 Data Dictionary
+## Data Dictionary
 
-| Field      | Type      | Description                                       |
-| ---------- | --------- | ------------------------------------------------- |
-| id         | UUID      | Unique identifier for insight                     |
-| job_id     | UUID      | Foreign key referencing jobs.id                   |
-| type       | VARCHAR   | Insight type (e.g., SUSPICIOUS_IP, TRAFFIC_TREND) |
-| title      | TEXT      | Short human-readable title                        |
-| severity   | VARCHAR   | Severity level                                    |
-| data       | JSONB     | Structured data for charts, lists, or metrics     |
-| created_at | TIMESTAMP | Insight creation time                             |
+| Field      | Type      | Description      |
+| ---------- | --------- | ---------------- |
+| id         | UUID      | Log entry ID     |
+| job_id     | UUID      | Reference to job |
+| timestamp  | TIMESTAMP | Event time       |
+| source     | VARCHAR   | Log source       |
+| event_type | VARCHAR   | Event type       |
+| ip_address | VARCHAR   | IP address       |
+| severity   | VARCHAR   | Log severity     |
+| metadata   | JSONB     | Flexible fields  |
+| created_at | TIMESTAMP | Record creation  |
 
 ---
 
-# 🔗 Relationships
+# 6. insights Table
+
+## Purpose
+
+Stores final analysis results (user-facing insights).
+
+---
+
+## Data Dictionary
+
+| Field      | Type      | Description             |
+| ---------- | --------- | ----------------------- |
+| id         | UUID      | Insight ID              |
+| job_id     | UUID      | Reference to job        |
+| type       | VARCHAR   | Insight type            |
+| title      | TEXT      | Short summary           |
+| severity   | VARCHAR   | Severity level          |
+| data       | JSONB     | Structured insight data |
+| created_at | TIMESTAMP | Creation time           |
+
+---
+
+# 7. Relationships
 
 * jobs.id → normalized_logs.job_id (1:N)
 * jobs.id → insights.job_id (1:N)
 
-No direct relationship between logs and insights is enforced via foreign keys.
-Instead, references (if needed) are stored inside insight JSON data.
+---
+
+# 8. Design Decisions
+
+## 1. Enum-Based State Control
+
+* Prevents invalid values
+* Ensures consistency across API + DB + pipeline
+
+## 2. Stage Checkpointing
+
+* Enables resume capability
+* Supports retry and recovery
+
+## 3. Outcome Separation
+
+* Avoids mixing status with result quality
+* Replaces ambiguous values like COMPLETED_WITH_WARNINGS
+
+## 4. Hybrid Storage
+
+* Performance (DB for structured data)
+* Scalability (files outside DB)
 
 ---
 
-# ⚙️ Design Decisions Summary
+# 9. Conclusion
 
-## 1. Async Job-Based Architecture
+This schema provides:
 
-* API handles upload and job creation
-* Workers handle heavy processing
-
-## 2. Hybrid Storage Model
-
-* Raw logs stored outside DB
-* Structured logs stored in DB
-
-## 3. Row-Based Log Storage
-
-* One log event per row
-* Enables efficient querying and indexing
-
-## 4. Hybrid Schema (Columns + JSONB)
-
-* Core fields stored in columns
-* Flexible data stored in JSONB
-
-## 5. Insight Flexibility
-
-* Insights support multiple formats (numbers, arrays, charts)
-* JSONB enables visualization-ready outputs
-
-## 6. Forward-Compatible Deletion Strategy
-
-* Hard delete used currently
-* `deleted_at` field enables future soft delete
+* Strong consistency across system layers
+* Predictable state transitions
+* Scalable processing model
+* Clean separation of concerns
 
 ---
-
-# 🚀 Conclusion
-
-This schema provides a **scalable, flexible, and production-ready foundation** for SentinelX.
-
-It balances:
-
-* Performance (via structured columns)
-* Flexibility (via JSONB)
-* Observability (via job tracking)
-
-and supports future enhancements such as:
-
-* ML integration
-* real-time processing
-* advanced analytics

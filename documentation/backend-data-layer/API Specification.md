@@ -1,114 +1,55 @@
-# SentinelX – API Specification
-
-This document defines all backend API endpoints for SentinelX. It provides both **conceptual explanations** (how each endpoint fits into the system) and **precise contracts** (request/response formats, validation, and edge cases).
+# 📘 SentinelX – API Specification (Final)
 
 ---
 
-# 1. API Design Principles
+# 1. Overview
 
-SentinelX APIs follow a **job-based asynchronous model**:
+SentinelX is a **log-based intrusion detection system (IDS)** that processes uploaded logs asynchronously and returns structured security insights.
 
-* The client **never waits for heavy processing**
-* All long-running work is handled by background workers
-* APIs are **stateless, predictable, and idempotent where possible**
+The backend follows a **job-based asynchronous architecture**:
 
-### Key Design Rules
-
-* Controller = lightweight (validation + job creation only)
-* Worker = heavy processing (pipeline execution)
-* Database = single source of truth
-* Queue = execution trigger
+* Client uploads logs → job is created
+* Background workers process logs
+* Client polls for status
+* Client retrieves final insights
 
 ---
 
-# 2. Authentication
+# 2. Design Principles
 
-All endpoints require JWT authentication.
+* **Asynchronous Processing**: No heavy computation in request-response cycle
+* **Stateless APIs**: Each request is independent
+* **Database as Source of Truth**
+* **Separation of Concerns**:
+
+  * Auth → identity
+  * Jobs → processing
+  * Results → insights
+* **Idempotency-safe (basic level)**: Duplicate requests do not corrupt system
+
+---
+
+# 3. Authentication
+
+All endpoints require JWT authentication unless specified.
 
 ### Header
 
-```http
+```
 Authorization: Bearer <JWT>
 ```
 
-### Behavior
-
-* Invalid token → `401 Unauthorized`
-* Missing token → `401 Unauthorized`
-
----
-
-# 3. POST /upload
-
-## Overview
-
-This endpoint is the **entry point of the system**. It accepts a log file, creates a job, and triggers asynchronous processing.
-
-It does NOT process logs directly. Instead, it:
-
-* Validates input
-* Stores file
-* Creates job record
-* Pushes job to queue
-
----
-
-## Request
-
-### Headers
-
-```http
-Authorization: Bearer <JWT>
-Content-Type: multipart/form-data
-```
-
-### Body
-
-* `file` (required) → log file
-* `config` (optional) → future extensions
-
----
-
-## Validations
-
-* User authentication
-* File presence
-* File size limit
-* File type (`.log`, `.txt`, `.json`)
-
----
-
-## Internal Flow
-
-* Save file to storage
-* Create job in DB:
-
-  * status = UPLOADED
-  * lastCompletedStage = UPLOADED
-* Push jobId to queue
-
----
-
-## Response
+### JWT Payload
 
 ```json
 {
-  "jobId": "uuid",
-  "status": "processing"
+  "userId": "uuid",
+  "email": "user@example.com",
+  "exp": "timestamp"
 }
 ```
 
----
-
-## Errors
-
-### 400 Bad Request
-
-```json
-{ "error": "Invalid file format" }
-```
-
-### 401 Unauthorized
+### Error
 
 ```json
 { "error": "Unauthorized" }
@@ -116,108 +57,233 @@ Content-Type: multipart/form-data
 
 ---
 
-# 4. GET /job/:jobId/status
+# 4. Auth APIs
 
-## Overview
+## 4.1 POST /auth/register
 
-This endpoint allows the client to **track job progress**.
+### Purpose
 
-It reads job state from DB and returns:
+Create a new user and return authentication token.
 
-* current stage
-* overall status
-* estimated progress
+### Request
 
----
+```json
+{
+  "email": "user@example.com",
+  "password": "Secure@123"
+}
+```
 
-## Request
+### Validations
 
-```http
-GET /job/:jobId/status
-Authorization: Bearer <JWT>
+* Email must be valid
+* Email must be unique
+* Password:
+
+  * Min 8 characters
+  * At least 1 number
+  * At least 1 special character
+
+### Response
+
+```json
+{
+  "userId": "uuid",
+  "email": "user@example.com",
+  "token": "jwt"
+}
+```
+
+### Errors
+
+```json
+{ "error": "Invalid email or password format" }
+```
+
+```json
+{ "error": "Email already registered" }
 ```
 
 ---
 
-## Internal Flow
+## 4.2 POST /auth/login
 
-* Validate job exists
-* Validate ownership
-* Fetch job state
-* Derive stage + progress
+### Purpose
+
+Authenticate user and return JWT.
+
+### Request
+
+```json
+{
+  "email": "user@example.com",
+  "password": "Secure@123"
+}
+```
+
+### Response
+
+```json
+{
+  "token": "jwt"
+}
+```
+
+### Errors
+
+```json
+{ "error": "Invalid email or password" }
+```
 
 ---
 
-## Response
+## 4.3 GET /auth/me
+
+### Purpose
+
+Validate token and return user identity.
+
+### Response
+
+```json
+{
+  "userId": "uuid",
+  "email": "user@example.com",
+  "createdAt": "timestamp"
+}
+```
+
+---
+
+# 5. Job APIs
+
+## 5.1 POST /jobs/upload
+
+### Purpose
+
+Upload log file and create processing job.
+
+### Request
+
+* Content-Type: multipart/form-data
+* Fields:
+
+  * file (required)
+  * config (optional)
+
+### Validations
+
+* File required
+* Allowed types: .log, .txt, .json
+* Max size: 300MB
+
+### Flow
+
+1. Validate input
+2. Store file (disk)
+3. Create DB job
+4. Push to queue
+
+### Response
+
+```json
+{
+  "jobId": "uuid",
+  "status": "UPLOADED"
+}
+```
+
+### Errors
+
+```json
+{ "error": "Invalid file or format" }
+```
+
+```json
+{ "error": "File too large" }
+```
+
+---
+
+## 5.2 GET /jobs
+
+### Purpose
+
+Fetch list of user jobs (dashboard view).
+
+### Query Params
+
+* limit (default: 10)
+* offset (default: 0)
+
+### Response
+
+```json
+[
+  {
+    "jobId": "uuid",
+    "fileName": "server.log",
+    "status": "COMPLETED",
+    "severity": "HIGH",
+    "createdAt": "timestamp"
+  }
+]
+```
+
+---
+
+## 5.3 GET /jobs/:jobId/status
+
+### Purpose
+
+Track job progress.
+
+### Progress Mapping
+
+| Stage       | Progress |
+| ----------- | -------- |
+| UPLOADED    | 0        |
+| PARSING     | 10       |
+| NORMALIZING | 25       |
+| ANALYZING   | 70       |
+| INSIGHTS    | 100      |
+
+### Response
 
 ```json
 {
   "jobId": "uuid",
   "status": "PROCESSING",
   "currentStage": "ANALYZING",
-  "progress": 65,
+  "progress": 70,
   "lastUpdated": "timestamp"
+}
+```
+
+### Failed
+
+```json
+{
+  "jobId": "uuid",
+  "status": "FAILED",
+  "error": "Parsing failed"
 }
 ```
 
 ---
 
-## Status Values
+## 5.4 GET /jobs/:jobId/results
 
-* UPLOADED
-* PROCESSING
-* COMPLETED
-* COMPLETED_WITH_WARNINGS
-* FAILED
+### Purpose
 
----
+Return analyzed insights.
 
-## Errors
+### Query Params
 
-### 404 Not Found
-
-```json
-{ "error": "Job not found" }
-```
-
-### 403 Forbidden
-
-```json
-{ "error": "Unauthorized access" }
-```
+* limit (default: 20)
+* offset (default: 0)
 
 ---
-
-# 5. GET /job/:jobId/results
-
-## Overview
-
-This endpoint returns **final insights only**.
-
-It does NOT expose intermediate pipeline data.
-
----
-
-## Internal Behavior
-
-* If processing → return waiting response
-* If completed → return insights
-* If partial → return insights + warnings
-* If failed → return error
-* If inconsistency detected → trigger recovery
-
----
-
-## Request
-
-```http
-GET /job/:jobId/results
-Authorization: Bearer <JWT>
-```
-
----
-
-## Response Cases
 
 ### Processing
 
@@ -235,9 +301,25 @@ Authorization: Bearer <JWT>
 ```json
 {
   "status": "COMPLETED",
-  "summary": "...",
+  "summary": "Suspicious activity detected",
   "severity": "HIGH",
-  "threats": []
+  "metrics": {
+    "totalLogs": 12000,
+    "analyzedLogs": 12000,
+    "flaggedLogs": 320
+  },
+  "threats": [
+    {
+      "id": "uuid",
+      "type": "BRUTE_FORCE",
+      "severity": "HIGH",
+      "message": "Multiple failed login attempts",
+      "timestamp": "timestamp",
+      "source": "ip",
+      "user": "admin",
+      "logRefs": ["log1", "log2"]
+    }
+  ]
 }
 ```
 
@@ -248,9 +330,8 @@ Authorization: Bearer <JWT>
 ```json
 {
   "status": "COMPLETED_WITH_WARNINGS",
-  "summary": "...",
-  "threats": [],
-  "warnings": ["ML failed"]
+  "warnings": ["ML model failed"],
+  "threats": []
 }
 ```
 
@@ -261,46 +342,161 @@ Authorization: Bearer <JWT>
 ```json
 {
   "status": "FAILED",
-  "error": "Processing failed"
+  "error": "Analysis failed"
 }
 ```
 
 ---
 
-## Edge Case: Missing Insights
+### Missing Insights Behavior
 
-If job is completed but insights are missing:
-
-* Trigger re-processing of insights stage
-* Return processing response
+* Re-trigger insights stage
+* Return PROCESSING response
 
 ---
 
-# 6. GET /jobs
+## 5.5 DELETE /jobs/:jobId
 
-## Overview
+### Purpose
 
-Returns list of user jobs for dashboard.
+Delete job and associated data.
 
----
+### Behavior
 
-## Response
+* Delete DB records
+* Delete stored file
+
+### Response
 
 ```json
-[
-  {
-    "jobId": "uuid",
-    "status": "COMPLETED",
-    "createdAt": "timestamp"
-  }
-]
+{
+  "message": "Job deleted successfully"
+}
 ```
 
 ---
 
-# 7. Error Handling Strategy
+## 5.6 POST /jobs/:jobId/retry
 
-All errors follow consistent format:
+### Purpose
+
+Retry failed or incomplete job.
+
+### Behavior
+
+* Reset job state
+* Re-run pipeline
+
+### Response
+
+```json
+{
+  "jobId": "uuid",
+  "status": "REPROCESSING"
+}
+```
+
+### Error
+
+```json
+{
+  "error": "Job already completed"
+}
+```
+
+---
+
+# 6. State Model (Status, Stage, Outcome)
+
+To ensure consistency across API, database, and pipeline, SentinelX separates **Job Status**, **Pipeline Stage**, and **Result Outcome**.
+
+---
+
+## 6.1 Job Status (Lifecycle State)
+
+```text
+UPLOADED
+PROCESSING
+COMPLETED
+FAILED
+```
+
+* Represents overall job lifecycle
+* Used in Status API and Results API
+
+---
+
+## 6.2 Pipeline Stage (Execution State)
+
+```text
+PARSE
+NORMALIZE
+ANALYZE
+INSIGHTS
+```
+
+* Internal execution stages
+* Stored in DB as `lastCompletedStage`
+* Used to compute progress in `/jobs/:jobId/status`
+
+---
+
+## 6.3 Result Outcome (Quality State)
+
+```text
+SUCCESS
+WARNING
+```
+
+* Only applicable when `status = COMPLETED`
+* SUCCESS → All analyzers succeeded
+* WARNING → Partial issues (e.g., ML failure)
+
+---
+
+## 6.4 Example Mappings
+
+### Completed Successfully
+
+```json
+{
+  "status": "COMPLETED",
+  "outcome": "SUCCESS"
+}
+```
+
+### Completed with Warnings
+
+```json
+{
+  "status": "COMPLETED",
+  "outcome": "WARNING"
+}
+```
+
+### Processing
+
+```json
+{
+  "status": "PROCESSING",
+  "currentStage": "ANALYZE"
+}
+```
+
+### Failed
+
+```json
+{
+  "status": "FAILED",
+  "error": "Parsing failed"
+}
+```
+
+---
+
+# 7. Error Format
+
+All APIs follow consistent error format:
 
 ```json
 {
@@ -310,15 +506,13 @@ All errors follow consistent format:
 
 ---
 
-# 8. Design Guarantees
+# 8. Summary
 
-* APIs are stateless
-* All heavy work is async
-* No duplicate processing due to idempotency
-* Safe retry mechanisms exist
+This API layer ensures:
+
+* Clean separation between client and processing pipeline
+* Scalable async architecture
+* Reliable job tracking
+* Structured security insights delivery
 
 ---
-
-# 9. Summary
-
-This API layer ensures a clean separation between client interaction and backend processing, enabling scalability, reliability, and maintainability.
