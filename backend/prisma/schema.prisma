@@ -5,11 +5,92 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // The 'url' property must be removed from here
 }
 
-model User {
-  id    Int     @id @default(autoincrement())
-  email String  @unique
-  name  String?
+model insights {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  job_id     String    @db.Uuid
+  type       String    @db.VarChar(100)
+  title      String?
+  severity   String?   @db.VarChar(50)
+  data       Json?
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  jobs       jobs      @relation(fields: [job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([job_id], map: "idx_insights_job_id")
+  @@index([type], map: "idx_insights_type")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model jobs {
+  id                   String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id              String            @db.Uuid
+  file_path            String
+  file_name            String
+  file_size            BigInt
+  status               job_status_enum   @default(UPLOADED)
+  last_completed_stage job_stage_enum?
+  outcome              job_outcome_enum?
+  progress             Int?              @default(0)
+  retry_count          Int?              @default(0)
+  error_message        String?
+  created_at           DateTime?         @default(now()) @db.Timestamp(6)
+  updated_at           DateTime?         @default(now()) @db.Timestamp(6)
+  deleted_at           DateTime?         @db.Timestamp(6)
+  insights             insights[]
+  users                users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  normalized_logs      normalized_logs[]
+
+  @@index([created_at], map: "idx_jobs_created_at")
+  @@index([status], map: "idx_jobs_status")
+  @@index([user_id], map: "idx_jobs_user_id")
+}
+
+model normalized_logs {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  job_id     String    @db.Uuid
+  timestamp  DateTime  @db.Timestamp(6)
+  source     String?   @db.VarChar(100)
+  event_type String?   @db.VarChar(100)
+  ip_address String?   @db.VarChar(50)
+  severity   String?   @db.VarChar(50)
+  metadata   Json?
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  jobs       jobs      @relation(fields: [job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([ip_address], map: "idx_logs_ip")
+  @@index([job_id], map: "idx_logs_job_id")
+  @@index([timestamp], map: "idx_logs_timestamp")
+}
+
+model users {
+  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email         String    @unique @db.VarChar(255)
+  password_hash String
+  first_name    String?   @db.VarChar(100)
+  last_name     String?   @db.VarChar(100)
+  created_at    DateTime? @default(now()) @db.Timestamp(6)
+  updated_at    DateTime? @default(now()) @db.Timestamp(6)
+  jobs          jobs[]
+
+  @@index([email], map: "idx_users_email")
+}
+
+enum job_outcome_enum {
+  SUCCESS
+  WARNING
+}
+
+enum job_stage_enum {
+  PARSE
+  NORMALIZE
+  ANALYZE
+  INSIGHTS
+}
+
+enum job_status_enum {
+  UPLOADED
+  PROCESSING
+  COMPLETED
+  FAILED
 }
