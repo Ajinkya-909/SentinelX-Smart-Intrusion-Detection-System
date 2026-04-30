@@ -16,3 +16,5 @@ storage/temp/*
 .idea/
 *.swp
 *.swo
+
+/src/generated/prisma

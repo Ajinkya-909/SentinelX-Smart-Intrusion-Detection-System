@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  postgres-db:
+    image: postgres:16
+    container_name: sentinelx_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: supersecretpassword
+      POSTGRES_DB: sentinelx_ids
+    ports:
+      - "5432:5432"
+    volumes:
+      - sentinelx_pgdata:/var/lib/postgresql/data
+
+volumes:
+  sentinelx_pgdata:
