@@ -1,6 +1,7 @@
-version: '3.8'
+version: "3.8"
 
 services:
+  # PostgreSQL Database
   postgres-db:
     image: postgres:16
     container_name: sentinelx_postgres
@@ -13,6 +14,28 @@ services:
       - "5432:5432"
     volumes:
       - sentinelx_pgdata:/var/lib/postgresql/data
+    networks:
+      - sentinelx-network
+
+  # Redis for BullMQ
+  redis:
+    image: redis:7-alpine
+    container_name: sentinelx_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - sentinelx_redis_data:/data
+    command: redis-server --appendonly yes --loglevel warning
+    networks:
+      - sentinelx-network
 
 volumes:
   sentinelx_pgdata:
+    driver: local
+  sentinelx_redis_data:
+    driver: local
+
+networks:
+  sentinelx-network:
+    driver: bridge
