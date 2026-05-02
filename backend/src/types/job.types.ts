@@ -22,11 +22,6 @@ export interface JobCurrentState {
   can_retry: boolean;                       // Whether job can be retried
 }
 
-/**
- * Determine the next stage after last completed stage
- */
-export type DeriveNextStageResult = JobStageEnum | null;
-
 // ==========================================
 // JOB CREATION & UPLOAD
 // ==========================================
@@ -48,7 +43,7 @@ export interface JobUploadResponse {
   job_id: string;
   status: JobStatusEnum;
   file_name: string;
-  file_size: bigint;
+  file_size: number;
   created_at: Date;
 }
 
@@ -57,95 +52,30 @@ export interface JobUploadResponse {
 // ==========================================
 
 /**
- * Request to get job status
- */
-export interface JobStatusRequest {
-  job_id: string;
-}
-
-/**
- * Detailed job status response
+ * Job status response
  */
 export interface JobStatusResponse {
   job_id: string;
   status: JobStatusEnum;
   last_completed_stage: JobStageEnum | null;
   current_stage: JobStageEnum | null;
-  progress: number;
   outcome: JobOutcomeEnum | null;
+  progress: number;
   error_message: string | null;
   retry_count: number;
   created_at: Date;
   updated_at: Date;
 }
 
-/**
- * Job progress update
- */
-export interface JobProgressUpdate {
-  job_id: string;
-  progress: number;        // 0-100
-  stage?: JobStageEnum;   // Optional: update completed stage
-  status?: JobStatusEnum; // Optional: update status
-}
-
 // ==========================================
-// JOB FAILURE & ERROR HANDLING
+// JOB RETRY
 // ==========================================
 
 /**
- * Job error context
+ * Retry job request
  */
-export interface JobError {
+export interface RetryJobRequest {
   job_id: string;
-  stage: JobStageEnum;
-  error_message: string;
-  error_code?: string;
-  retry_count: number;
-  is_retriable: boolean;
-}
-
-/**
- * Mark job as failed
- */
-export interface MarkJobFailedInput {
-  job_id: string;
-  error_message: string;
-  is_retriable: boolean;
-}
-
-/**
- * Retry job
- */
-export interface RetryJobInput {
-  job_id: string;
-  max_retries?: number;
-}
-
-export interface RetryJobResponse {
-  job_id: string;
-  retry_count: number;
-  next_stage: JobStageEnum | null;
-}
-
-// ==========================================
-// JOB COMPLETION
-// ==========================================
-
-/**
- * Mark job as completed
- */
-export interface CompleteJobInput {
-  job_id: string;
-  outcome: JobOutcomeEnum;
-  final_stage: JobStageEnum;
-}
-
-export interface CompleteJobResponse {
-  job_id: string;
-  status: JobStatusEnum;
-  outcome: JobOutcomeEnum;
-  completed_at: Date;
 }
 
 // ==========================================

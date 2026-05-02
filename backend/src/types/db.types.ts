@@ -50,10 +50,30 @@ export interface User {
   last_name: string | null;      // Optional last name
   created_at: Date;              // Record creation timestamp
   updated_at: Date;              // Record last update timestamp
+
+  // ==========================================
+  // RELATIONS
+  // ==========================================
+  jobs?: Job[];                  // One-to-many: User has many Jobs
 }
 
-export type CreateUserInput = Omit<User, 'id' | 'created_at' | 'updated_at'>;
-export type UpdateUserInput = Partial<Omit<User, 'id' | 'created_at' | 'updated_at'>>;
+/**
+ * User Input Types
+ * Define what data is sent TO the repository
+ */
+export interface CreateUserInput {
+  email: string;                 // Required: unique email
+  password_hash: string;         // Required: bcrypt hashed password
+  first_name?: string;           // Optional: first name
+  last_name?: string;            // Optional: last name
+}
+
+export interface UpdateUserInput {
+  email?: string;                // Optional: update email
+  password_hash?: string;        // Optional: update password
+  first_name?: string;           // Optional: update first name
+  last_name?: string;            // Optional: update last name
+}
 
 // ==========================================
 // JOBS TABLE
@@ -78,29 +98,13 @@ export interface Job {
   created_at: Date;                     // Job creation timestamp
   updated_at: Date;                     // Last update timestamp
   deleted_at: Date | null;              // Soft delete timestamp
-}
 
-/**
- * Job creation input - subset of Job fields
- */
-export type CreateJobInput = Omit<
-  Job,
-  'id' | 'status' | 'last_completed_stage' | 'outcome' | 'progress' | 'retry_count' | 'error_message' | 'created_at' | 'updated_at' | 'deleted_at'
->;
-
-/**
- * Job update input - partial subset of Job fields
- */
-export type UpdateJobInput = Partial<
-  Omit<Job, 'id' | 'created_at' | 'updated_at'>
->;
-
-/**
- * Job with read-only metadata
- */
-export interface JobWithMetadata extends Job {
-  current_stage?: JobStageEnum; // Derived from last_completed_stage
-  is_retriable?: boolean;       // Whether job can be retried
+  // ==========================================
+  // RELATIONS
+  // ==========================================
+  users?: User;                         // Many-to-one: Job belongs to User
+  insights?: Insight[];                 // One-to-many: Job has many Insights
+  normalized_logs?: NormalizedLog[];    // One-to-many: Job has many NormalizedLogs
 }
 
 // ==========================================
@@ -121,16 +125,11 @@ export interface NormalizedLog {
   severity: string | null;       // Log severity level
   metadata: Record<string, any> | null;  // JSONB - flexible structured data
   created_at: Date;              // Record creation timestamp
-}
 
-export type CreateNormalizedLogInput = Omit<NormalizedLog, 'id' | 'created_at'>;
-export type CreateNormalizedLogBatchInput = CreateNormalizedLogInput[];
-
-/**
- * Normalized Log Query Result - for database queries
- */
-export interface NormalizedLogQueryResult extends NormalizedLog {
-  // metadata is already included as Record<string, any>
+  // ==========================================
+  // RELATIONS
+  // ==========================================
+  jobs?: Job;                    // Many-to-one: NormalizedLog belongs to Job
 }
 
 // ==========================================
@@ -149,27 +148,9 @@ export interface Insight {
   severity: string | null;       // Severity level (e.g., CRITICAL, HIGH, MEDIUM, LOW)
   data: Record<string, any> | null;     // JSONB - structured insight data
   created_at: Date;              // Record creation timestamp
-}
 
-export type CreateInsightInput = Omit<Insight, 'id' | 'created_at'>;
-export type CreateInsightBatchInput = CreateInsightInput[];
-
-/**
- * Insight Query Result - for database queries
- */
-export interface InsightQueryResult extends Insight {
-  // data is already included as Record<string, any>
-}
-
-// ==========================================
-// BATCH OPERATIONS
-// ==========================================
-
-/**
- * Bulk insert result
- */
-export interface BulkInsertResult {
-  inserted_count: number;
-  failed_count: number;
-  errors?: Array<{ index: number; error: string }>;
+  // ==========================================
+  // RELATIONS
+  // ==========================================
+  jobs?: Job;                    // Many-to-one: Insight belongs to Job
 }
