@@ -19,6 +19,9 @@ app.use(
 );
 
 //  import the routes in future
+import authRoutes from "./routes/auth.routes";
+
+app.use("/auth", authRoutes);
 
 app.get("/", (req, res) => {
   res.send("Welcome to SentinelX");
