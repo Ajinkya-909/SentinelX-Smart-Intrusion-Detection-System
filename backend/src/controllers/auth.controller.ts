@@ -17,6 +17,7 @@ export const userSignup = asyncHandler(async (req: Request, res: Response) => {
     .cookie("token", result.token, {
       httpOnly: true,
       sameSite: "strict",
+      secure:true,
       maxAge: 5 * 24 * 60 * 60 * 1000,
     })
     .json(new ApiResponse(201, result as any, "User registered successfully"));
