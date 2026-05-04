@@ -3,6 +3,7 @@ import { CreateUserInput } from "@/types/db.types";
 import { ApiError } from "@/utils/api-error";
 import { asyncHandler } from "@/utils/async-handler";
 import bcrypt from "bcrypt";
+import { NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
 const generateJWTToken = (
@@ -56,6 +57,38 @@ export const registerUserService = async (
       email: user.email!,
       first_name: user.first_name!,
       last_name: user.last_name!,
+    },
+    token,
+  };
+};
+
+export const loginuserService = async (email: string, password: string) => {
+  const existingUser = await userRepository.findByEmailForAuth(email);
+  if (!existingUser) {
+    throw new ApiError(401, "Invalid login credentials");
+  }
+
+  const isPasswordValid = await bcrypt.compare(
+    password,
+    existingUser.password_hash,
+  );
+  if (!isPasswordValid) {
+    throw new ApiError(401, "Invalid login credentials");
+  }
+
+  const token = generateJWTToken(
+    existingUser.id,
+    existingUser.email!,
+    existingUser.first_name!,
+    existingUser.last_name!,
+  );
+
+  return {
+    user: {
+      id: existingUser.id,
+      email: existingUser.email!,
+      first_name: existingUser.first_name!,
+      last_name: existingUser.last_name!,
     },
     token,
   };
