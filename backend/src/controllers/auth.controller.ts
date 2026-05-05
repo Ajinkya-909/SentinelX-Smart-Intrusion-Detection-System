@@ -1,7 +1,15 @@
 import { Request, Response } from "express";
 import { asyncHandler } from "@/utils/async-handler";
-import { loginuserService, registerUserService } from "@/services/auth.service";
+import {
+  deletUserService,
+  loginuserService,
+  registerUserService,
+} from "@/services/auth.service";
 import { ApiResponse } from "@/utils/api-response";
+
+interface UserDeleteParams {
+  userId: string;
+}
 
 export const userSignup = asyncHandler(async (req: Request, res: Response) => {
   const { first_name, last_name, password, email } = req.body;
@@ -37,3 +45,17 @@ export const userLogin = asyncHandler(async (req: Request, res: Response) => {
     })
     .json(new ApiResponse(200, result as any, "User logged in successfully"));
 });
+
+export const userUserDelete = asyncHandler(
+  async (req: Request<UserDeleteParams>, res: Response) => {
+    const userIdFromToken = req.user!.id; 
+    const userIdFromParams = req.params.userId;
+
+    const result = await deletUserService(userIdFromToken, userIdFromParams);
+
+    return res
+      .status(204)
+      .clearCookie("token")
+      .json(new ApiResponse(204, result as any, "User deleted successfully"));
+  },
+);

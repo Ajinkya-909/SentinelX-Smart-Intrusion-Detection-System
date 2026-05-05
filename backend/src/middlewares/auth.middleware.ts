@@ -9,7 +9,12 @@ import { verifyToken } from "@/utils/jwt";
 declare global {
   namespace Express {
     interface Request {
-      user?: any;
+      user?: {
+        id: string;
+        email: string;
+        first_name: string | null;
+        last_name: string | null;
+      };
     }
   }
 }

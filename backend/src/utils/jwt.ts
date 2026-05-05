@@ -27,7 +27,14 @@ export const verifyToken = async (token: string) => {
     if (!user) {
       throw new ApiError(401, "Invalid access token");
     }
-    return user;
+
+    // Return only safe fields (no password_hash, created_at, updated_at)
+    return {
+      id: user.id,
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name,
+    };
   } catch (error) {
     throw new ApiError(401, "Invalid access token");
   }
