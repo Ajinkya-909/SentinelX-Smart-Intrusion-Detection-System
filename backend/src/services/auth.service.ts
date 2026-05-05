@@ -2,23 +2,10 @@ import { userRepository } from "@/repositories";
 import { CreateUserInput } from "@/types/db.types";
 import { ApiError } from "@/utils/api-error";
 import { asyncHandler } from "@/utils/async-handler";
+import { generateJWTToken } from "@/utils/jwt";
 import bcrypt from "bcrypt";
 import { NextFunction } from "express";
 import jwt from "jsonwebtoken";
-
-const generateJWTToken = (
-  userId: string,
-  email: string,
-  first_name: string,
-  last_name: string,
-): string => {
-  const token = jwt.sign(
-    { userId, first_name, last_name, email },
-    process.env.JWT_SECRET || "your-secret-key",
-    { expiresIn: "5d" },
-  );
-  return token;
-};
 
 const hashPassword = async (password: string): Promise<string> => {
   return await bcrypt.hash(password, 10);
