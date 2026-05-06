@@ -28,7 +28,7 @@ export const userSignup = asyncHandler(async (req: Request, res: Response) => {
       secure: process.env.NODE_ENV === "production",
       maxAge: 5 * 24 * 60 * 60 * 1000,
     })
-    .json(new ApiResponse(201, result as any, "User registered successfully"));
+    .json(new ApiResponse(201, result, "User registered successfully"));
 });
 
 export const userLogin = asyncHandler(async (req: Request, res: Response) => {
@@ -43,19 +43,47 @@ export const userLogin = asyncHandler(async (req: Request, res: Response) => {
       secure: process.env.NODE_ENV === "production",
       maxAge: 5 * 24 * 60 * 60 * 1000,
     })
-    .json(new ApiResponse(200, result as any, "User logged in successfully"));
+    .json(new ApiResponse(200, result, "User logged in successfully"));
 });
 
 export const userUserDelete = asyncHandler(
   async (req: Request<UserDeleteParams>, res: Response) => {
-    const userIdFromToken = req.user!.id; 
+    const userIdFromToken = req.user!.id;
     const userIdFromParams = req.params.userId;
 
     const result = await deletUserService(userIdFromToken, userIdFromParams);
 
     return res
-      .status(204)
+      .status(200)
       .clearCookie("token")
-      .json(new ApiResponse(204, result as any, "User deleted successfully"));
+      .json(new ApiResponse(200, result, "User deleted successfully"));
   },
 );
+
+export const getCurrentUser = asyncHandler(
+  async (req: Request, res: Response) => {
+    const user = req.user!;
+
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          id: user.id,
+          email: user.email,
+          first_name: user.first_name,
+          last_name: user.last_name,
+        },
+        "User data retrieved successfully",
+      ),
+    );
+  },
+);
+
+export const userLogout = asyncHandler(async (req: Request, res: Response) => {
+  return res
+    .status(200)
+    .clearCookie("token")
+    .json(
+      new ApiResponse(200, { success: true }, "User logged out successfully"),
+    );
+});
