@@ -3,7 +3,7 @@
  * Covers job operations, state management, and lifecycle tracking
  */
 
-import { Job, JobStatusEnum, JobStageEnum, JobOutcomeEnum } from './db.types';
+import { Job, JobStatusEnum, JobStageEnum, JobOutcomeEnum } from "./db.types";
 
 // ==========================================
 // JOB STATE MANAGEMENT
@@ -14,12 +14,12 @@ import { Job, JobStatusEnum, JobStageEnum, JobOutcomeEnum } from './db.types';
  * Shows where the job is in the pipeline
  */
 export interface JobCurrentState {
-  status: JobStatusEnum;                    // Current lifecycle status
+  status: JobStatusEnum; // Current lifecycle status
   last_completed_stage: JobStageEnum | null; // Last successfully completed stage
-  current_stage: JobStageEnum | null;       // Derived: next stage to execute
-  is_processing: boolean;                   // Whether job is actively processing
-  progress: number;                         // Progress percentage
-  can_retry: boolean;                       // Whether job can be retried
+  current_stage: JobStageEnum | null; // Derived: next stage to execute
+  is_processing: boolean; // Whether job is actively processing
+  progress: number; // Progress percentage
+  can_retry: boolean; // Whether job can be retried
 }
 
 // ==========================================
@@ -28,13 +28,31 @@ export interface JobCurrentState {
 
 /**
  * Request to create a job from file upload
+ * Used by: repository.createJob()
  */
 export interface JobUploadRequest {
-  file_path: string;    // Where file is stored
-  file_name: string;    // Original filename
-  file_size: bigint;    // File size in bytes
-  user_id: string;      // User who uploaded
+  file_path: string; // Where file is stored
+  file_name: string; // Original filename
+  file_size: bigint; // File size in bytes
+  user_id: string; // User who uploaded
 }
+
+/**
+ * Input for updating a job
+ * Specifies which fields can be updated during pipeline execution
+ * Used by: repository.updateJob()
+ */
+export type JobUpdateInput = Partial<
+  Pick<
+    Job,
+    | "status"
+    | "last_completed_stage"
+    | "progress"
+    | "outcome"
+    | "error_message"
+    | "retry_count"
+  >
+>;
 
 /**
  * Response after job creation
@@ -117,7 +135,7 @@ export interface JobStatistics {
   completed_jobs: number;
   failed_jobs: number;
   processing_jobs: number;
-  success_rate: number;        // Percentage of successful jobs
+  success_rate: number; // Percentage of successful jobs
   average_processing_time: number; // In milliseconds
 }
 
@@ -130,7 +148,9 @@ export interface JobStatistics {
  */
 export interface BatchUpdateJobsInput {
   job_ids: string[];
-  update: Partial<Pick<Job, 'status' | 'last_completed_stage' | 'progress' | 'outcome'>>;
+  update: Partial<
+    Pick<Job, "status" | "last_completed_stage" | "progress" | "outcome">
+  >;
 }
 
 /**
