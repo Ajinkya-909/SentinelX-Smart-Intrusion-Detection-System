@@ -3,6 +3,7 @@
  * Covers job operations, state management, and lifecycle tracking
  */
 
+import { job_stage_enum } from "@/generated/prisma/enums";
 import { Job, JobStatusEnum, JobStageEnum, JobOutcomeEnum } from "./db.types";
 
 // ==========================================
@@ -160,4 +161,16 @@ export interface BatchOperationResult {
   successful: number;
   failed: number;
   errors?: Array<{ job_id: string; error: string }>;
+}
+
+export const PROGRESS_BY_STAGE: Record<JobStageEnum, number> = {
+  [JobStageEnum.PARSE]: 10,
+  [JobStageEnum.NORMALIZE]: 25,
+  [JobStageEnum.ANALYZE]: 70,
+  [JobStageEnum.INSIGHTS]: 100,
+};
+
+export function getProgressByStage(stage: JobStageEnum | null): number {
+  if (!stage) return 0;
+  return PROGRESS_BY_STAGE[stage];
 }
