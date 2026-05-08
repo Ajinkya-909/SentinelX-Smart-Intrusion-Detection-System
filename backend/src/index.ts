@@ -12,13 +12,13 @@ const startServer = async () => {
   try {
     await prisma.$connect();
     await prisma.$queryRaw`SELECT 1`;
-    console.log('✅ Database connected successfully');
+    console.log("✅ Database connected successfully");
 
     app.listen(port, () => {
       console.log(`🚀 App listening on http://localhost:${port}`);
     });
   } catch (error) {
-    console.error('❌ Failed to connect to database:', error);
+    console.error("❌ Failed to connect to database:", error);
     process.exit(1);
   }
 };

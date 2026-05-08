@@ -81,12 +81,17 @@ export const loginuserService = async (email: string, password: string) => {
   };
 };
 
-export const deletUserService = async (tokenUserId:string, paramUserId:string)=>{
-
-  if(tokenUserId !== paramUserId){
-    throw new ApiError(403, "Unauthorized: You can only delete your own account");
+export const deletUserService = async (
+  tokenUserId: string,
+  paramUserId: string,
+) => {
+  if (tokenUserId !== paramUserId) {
+    throw new ApiError(
+      403,
+      "Unauthorized: You can only delete your own account",
+    );
   }
-  
+
   const existingUser = await userRepository.findById(paramUserId);
   if (!existingUser) {
     throw new ApiError(404, "User not found");
@@ -97,7 +102,6 @@ export const deletUserService = async (tokenUserId:string, paramUserId:string)=>
   return {
     id: deletedUser.id,
     email: deletedUser.email,
-    message: "Account deleted successfully"
+    message: "Account deleted successfully",
   };
-
-}
+};

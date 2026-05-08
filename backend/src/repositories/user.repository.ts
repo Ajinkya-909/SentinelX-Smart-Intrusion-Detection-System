@@ -3,8 +3,8 @@
  * Handles all database operations for User table
  */
 
-import { prisma } from '@/config/db';
-import type { CreateUserInput, UpdateUserInput } from '@/types/db.types';
+import { prisma } from "@/config/db";
+import type { CreateUserInput, UpdateUserInput } from "@/types/db.types";
 
 export const userRepository = {
   /**
@@ -64,7 +64,8 @@ export const userRepository = {
   async update(id: string, data: UpdateUserInput) {
     const updateData: any = {};
     if (data.email !== undefined) updateData.email = data.email;
-    if (data.password_hash !== undefined) updateData.password_hash = data.password_hash;
+    if (data.password_hash !== undefined)
+      updateData.password_hash = data.password_hash;
     if (data.first_name !== undefined) updateData.first_name = data.first_name;
     if (data.last_name !== undefined) updateData.last_name = data.last_name;
 
