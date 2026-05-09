@@ -12,11 +12,18 @@ import {
 import { Router } from "express";
 import { validate } from "../middlewares/validator.middleware";
 import { verifyJWT } from "@/middlewares/auth.middleware";
+import { authLimiter } from "@/middlewares/rateLimit.middleware";
 
 const router = Router();
 
-router.post("/sign-up", userSignupValidator(), validate, userSignup);
-router.post("/login", userLoginValidator(), validate, userLogin);
+router.post(
+  "/sign-up",
+  authLimiter,
+  userSignupValidator(),
+  validate,
+  userSignup,
+);
+router.post("/login", authLimiter, userLoginValidator(), validate, userLogin);
 router.get("/me", verifyJWT, getCurrentUser);
 router.post("/logout", verifyJWT, userLogout);
 router.delete("/delete/:userId", verifyJWT, userUserDelete);
