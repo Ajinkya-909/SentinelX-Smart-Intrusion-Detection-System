@@ -2,26 +2,19 @@ import { Request, Response } from "express";
 import { asyncHandler } from "@/utils/async-handler";
 import { ApiResponse } from "@/utils/api-response";
 import { ApiError } from "@/utils/api-error";
-import { jobService } from "@/services/job.service";
+import { uploadService } from "@/services/jobs/upload.service";
+import { UPLOAD_ERRORS } from "@/constants/upload.constants";
 
 export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const file = req.file;
 
   if (!file) {
-    throw new ApiError(400, "No file uploaded");
+    throw new ApiError(400, UPLOAD_ERRORS.NO_FILE);
   }
 
-  const filePath = file.path;
-  const fileName = file.originalname;
-  const fileSize = BigInt(file.size);
-
-  const job = await jobService.createJob({
-    user_id: userId,
-    file_path: filePath,
-    file_name: fileName,
-    file_size: fileSize,
-  });
+  // Orchestrate upload workflow (file + job + cleanup on error)
+  const job = await uploadService.uploadAndCreateJob(file, userId);
 
   return res.status(201).json(
     new ApiResponse(

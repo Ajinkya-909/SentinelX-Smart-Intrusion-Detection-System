@@ -1,10 +1,10 @@
 import { jobRepository } from "@/repositories/job.repository";
-import { Job, JobStatusEnum, JobStageEnum } from "../types/db.types";
+import { Job, JobStatusEnum, JobStageEnum } from "../../types/db.types";
 import {
   JobUploadRequest,
   JobListResponse,
   getProgressByStage,
-} from "../types/job.types";
+} from "../../types/job.types";
 import { userRepository } from "@/repositories";
 import { ApiError } from "@/utils/api-error";
 
