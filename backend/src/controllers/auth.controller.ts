@@ -4,6 +4,7 @@ import {
   deletUserService,
   loginuserService,
   registerUserService,
+  updateUserService,
 } from "@/services/auth.service";
 import { ApiResponse } from "@/utils/api-response";
 
@@ -87,3 +88,22 @@ export const userLogout = asyncHandler(async (req: Request, res: Response) => {
       new ApiResponse(200, { success: true }, "User logged out successfully"),
     );
 });
+
+export const userUpdate = asyncHandler(
+  async (req: Request<{ userId: string }>, res: Response) => {
+    const userIdFromToken = req.user!.id;
+    const userIdFromParams = req.params.userId;
+    const { first_name, last_name, current_password, new_password } = req.body;
+
+    const result = await updateUserService(userIdFromToken, userIdFromParams, {
+      first_name,
+      last_name,
+      current_password,
+      new_password,
+    });
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, result.user, result.message));
+  },
+);

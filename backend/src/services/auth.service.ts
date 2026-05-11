@@ -81,6 +81,64 @@ export const loginuserService = async (email: string, password: string) => {
   };
 };
 
+export const updateUserService = async (
+  tokenUserId: string,
+  userId: string,
+  updateData: {
+    first_name?: string;
+    last_name?: string;
+    current_password?: string;
+    new_password?: string;
+  },
+) => {
+  if (tokenUserId !== userId) {
+    throw new ApiError(
+      403,
+      "Unauthorized: You can only update your own account",
+    );
+  }
+
+  const existingUser = await userRepository.findByEmailForAuth(userId);
+  if (!existingUser) {
+    throw new ApiError(404, "User not found");
+  }
+
+  // If updating password, validate current password
+  if (updateData.new_password) {
+    const isPasswordValid = await bcrypt.compare(
+      updateData.current_password!,
+      existingUser.password_hash,
+    );
+    if (!isPasswordValid) {
+      throw new ApiError(401, "Current password is incorrect");
+    }
+  }
+
+  // Prepare update data
+  const updatePayload: any = {};
+  if (updateData.first_name) {
+    updatePayload.first_name = updateData.first_name;
+  }
+  if (updateData.last_name) {
+    updatePayload.last_name = updateData.last_name;
+  }
+  if (updateData.new_password) {
+    updatePayload.password_hash = await hashPassword(updateData.new_password);
+  }
+
+  const updatedUser = await userRepository.update(userId, updatePayload);
+
+  return {
+    user: {
+      id: updatedUser.id,
+      email: updatedUser.email!,
+      first_name: updatedUser.first_name!,
+      last_name: updatedUser.last_name!,
+    },
+    message: "User information updated successfully",
+  };
+};
+
 export const deletUserService = async (
   tokenUserId: string,
   paramUserId: string,

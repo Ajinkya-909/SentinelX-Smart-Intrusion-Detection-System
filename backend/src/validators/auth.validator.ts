@@ -1,6 +1,6 @@
 import { body } from "express-validator";
 
-const userSignupValidator = ()=>{
+const userSignupValidator = () => {
   return [
     body("email")
       .trim()
@@ -20,7 +20,7 @@ const userSignupValidator = ()=>{
     body("last_name").optional().trim(),
   ];
 };
-const userLoginValidator = ()=>{
+const userLoginValidator = () => {
   return [
     body("email")
       .trim()
@@ -32,4 +32,37 @@ const userLoginValidator = ()=>{
   ];
 };
 
-export {userSignupValidator,userLoginValidator}
+const userUpdateValidator = () => {
+  return [
+    body("first_name")
+      .optional()
+      .trim()
+      .isLength({ min: 1 })
+      .withMessage("First name must not be empty"),
+    body("last_name")
+      .optional()
+      .trim()
+      .isLength({ min: 1 })
+      .withMessage("Last name must not be empty"),
+    body("current_password")
+      .if(() => {
+        // This will be checked in custom validation below
+        return true;
+      })
+      .optional()
+      .trim()
+      .isLength({ min: 1 })
+      .withMessage("Current password must not be empty"),
+    body("new_password")
+      .if(() => {
+        // This will be checked in custom validation below
+        return true;
+      })
+      .optional()
+      .trim()
+      .isLength({ min: 1 })
+      .withMessage("New password must not be empty"),
+  ];
+};
+
+export { userSignupValidator, userLoginValidator, userUpdateValidator };
