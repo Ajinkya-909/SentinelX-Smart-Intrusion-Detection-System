@@ -3,6 +3,7 @@ import { fileService } from "../files/file.service";
 import { jobService } from "./job.service";
 import { JobUploadRequest } from "@/types/job.types";
 import { Job } from "@/types/db.types";
+import { enqueueJob } from "@/queue/job.queue";
 
 const uploadService = {
   async uploadAndCreateJob(
@@ -30,8 +31,31 @@ const uploadService = {
         );
       }
 
-      // Throw error to user while keeping logging
       throw new ApiError(500, "Failed to create job after file upload");
+    }
+
+    try {
+      await enqueueJob({
+        job_id: job.id,
+        user_id: userId,
+        file_path: job.file_path,
+        file_name: job.file_name,
+        last_completed_stage: job.last_completed_stage,
+        retry_count: job.retry_count || 0,
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      console.error(
+        "Failed to enqueue job after creation, cleaning up...",
+        error,
+      );
+      try {
+        await fileService.deleteFile(savedFile.path);
+      } catch (deleteError) {
+        console.error("Failed to cleanup file after queue error", deleteError);
+      }
+
+      throw new ApiError(500, "Failed to queue job for processing");
     }
 
     return job;
