@@ -174,3 +174,25 @@ export function getProgressByStage(stage: JobStageEnum | null): number {
   if (!stage) return 0;
   return PROGRESS_BY_STAGE[stage];
 }
+
+export function getNextStageFromCompleted(
+  lastCompletedStage: JobStageEnum | null,
+): JobStageEnum | null {
+  const stageOrder: JobStageEnum[] = [
+    JobStageEnum.PARSE,
+    JobStageEnum.NORMALIZE,
+    JobStageEnum.ANALYZE,
+    JobStageEnum.INSIGHTS,
+  ];
+
+  if (!lastCompletedStage) {
+    return JobStageEnum.PARSE;
+  }
+
+  const currentIndex = stageOrder.indexOf(lastCompletedStage);
+  if (currentIndex === -1 || currentIndex === stageOrder.length - 1) {
+    return null;
+  }
+
+  return stageOrder[currentIndex + 1]!;
+}
