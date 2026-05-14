@@ -89,6 +89,18 @@ const jobRepository = {
     });
     return newJob as Job;
   },
+
+  /**
+   * Delete a job by ID
+   * @param jobId - UUID of the job to delete
+   * @returns - The deleted Job object
+   */
+  async deleteJob(jobId: string): Promise<Job> {
+    const deletedJob = await prisma.jobs.delete({
+      where: { id: jobId },
+    });
+    return deletedJob as Job;
+  },
 };
 
 export { jobRepository };

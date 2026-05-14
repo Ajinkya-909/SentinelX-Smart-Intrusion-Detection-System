@@ -8,20 +8,23 @@ export const generateJWTToken = (
   first_name: string,
   last_name: string,
 ): string => {
-  const token = jwt.sign(
-    { id, first_name, last_name, email },
-    process.env.JWT_SECRET || "your-secret-key",
-    { expiresIn: "5d" },
-  );
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("JWT_SECRET environment variable is required");
+  }
+  const token = jwt.sign({ id, first_name, last_name, email }, secret, {
+    expiresIn: "5d",
+  });
   return token;
 };
 
 export const verifyToken = async (token: string) => {
   try {
-    const decodedToken = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "your-secret-key",
-    ) as { id: string };
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      throw new Error("JWT_SECRET environment variable is required");
+    }
+    const decodedToken = jwt.verify(token, secret) as { id: string };
     const user = await userRepository.findById(decodedToken.id);
 
     if (!user) {

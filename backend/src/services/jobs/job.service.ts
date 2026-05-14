@@ -112,6 +112,16 @@ const jobService = {
     });
     return updatedJob;
   },
+
+  async deleteJob(jobId: string): Promise<Job> {
+    const job = await jobRepository.getJobById(jobId);
+    if (!job) {
+      throw new ApiError(404, "Job not found");
+    }
+
+    const deletedJob = await jobRepository.deleteJob(jobId);
+    return deletedJob;
+  },
 };
 
 export { jobService };

@@ -70,7 +70,7 @@ model users {
   first_name    String?   @db.VarChar(100)
   last_name     String?   @db.VarChar(100)
   created_at    DateTime? @default(now()) @db.Timestamp(6)
-  updated_at    DateTime? @default(now()) @db.Timestamp(6)
+  updated_at    DateTime? @default(now()) @updatedAt @db.Timestamp(6)
   jobs          jobs[]
 
   @@index([email], map: "idx_users_email")

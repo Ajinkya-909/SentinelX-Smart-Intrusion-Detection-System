@@ -98,7 +98,7 @@ export const updateUserService = async (
     );
   }
 
-  const existingUser = await userRepository.findByEmailForAuth(userId);
+  const existingUser = await userRepository.findById(userId);
   if (!existingUser) {
     throw new ApiError(404, "User not found");
   }

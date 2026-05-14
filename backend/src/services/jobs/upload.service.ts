@@ -55,6 +55,16 @@ const uploadService = {
         console.error("Failed to cleanup file after queue error", deleteError);
       }
 
+      // Delete the orphaned job row
+      try {
+        await jobService.deleteJob(job.id);
+      } catch (deleteJobError) {
+        console.error(
+          "Failed to cleanup job record after queue error",
+          deleteJobError,
+        );
+      }
+
       throw new ApiError(500, "Failed to queue job for processing");
     }
 

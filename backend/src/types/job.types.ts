@@ -164,9 +164,9 @@ export interface BatchOperationResult {
 }
 
 export const PROGRESS_BY_STAGE: Record<JobStageEnum, number> = {
-  [JobStageEnum.PARSE]: 10,
-  [JobStageEnum.NORMALIZE]: 25,
-  [JobStageEnum.ANALYZE]: 70,
+  [JobStageEnum.PARSE]: 25,
+  [JobStageEnum.NORMALIZE]: 50,
+  [JobStageEnum.ANALYZE]: 75,
   [JobStageEnum.INSIGHTS]: 100,
 };
 
