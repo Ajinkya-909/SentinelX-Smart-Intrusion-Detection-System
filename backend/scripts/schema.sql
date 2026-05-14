@@ -17,10 +17,14 @@ CREATE TYPE job_status_enum AS ENUM (
 
 -- Pipeline stages
 CREATE TYPE job_stage_enum AS ENUM (
-  'PARSE',
-  'NORMALIZE',
-  'ANALYZE',
-  'INSIGHTS'
+  'UPLOADED',
+  'PREPROCESSED',
+  'TYPE_DETECTED',
+  'PARSED',
+  'NORMALIZED',
+  'ANALYZED',
+  'INSIGHTS_GENERATED',
+  'COMPLETED'
 );
 
 -- Result outcome
@@ -73,6 +77,9 @@ CREATE TABLE jobs (
 
   -- ERROR HANDLING
   error_message TEXT,
+
+  -- PIPELINE RECOVERY METADATA
+  processing_metadata JSONB,
 
   -- TIMESTAMPS
   created_at TIMESTAMP DEFAULT NOW(),

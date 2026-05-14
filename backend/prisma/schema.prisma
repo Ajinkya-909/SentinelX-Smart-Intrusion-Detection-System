@@ -34,6 +34,7 @@ model jobs {
   progress             Int?              @default(0)
   retry_count          Int?              @default(0)
   error_message        String?
+  processing_metadata  Json?
   created_at           DateTime?         @default(now()) @db.Timestamp(6)
   updated_at           DateTime?         @default(now()) @db.Timestamp(6)
   deleted_at           DateTime?         @db.Timestamp(6)
@@ -82,10 +83,14 @@ enum job_outcome_enum {
 }
 
 enum job_stage_enum {
-  PARSE
-  NORMALIZE
-  ANALYZE
-  INSIGHTS
+  UPLOADED
+  PREPROCESSED
+  TYPE_DETECTED
+  PARSED
+  NORMALIZED
+  ANALYZED
+  INSIGHTS_GENERATED
+  COMPLETED
 }
 
 enum job_status_enum {
