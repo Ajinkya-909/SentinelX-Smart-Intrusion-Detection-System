@@ -1,6 +1,7 @@
 import { Worker, Job } from "bullmq";
 import { getRedis } from "../config/redis";
 import { jobService } from "../services/jobs/job.service";
+import { pipelineService } from "../services/pipeline/pipeline.service";
 import { QueuedJobPayload } from "../types/queue.types";
 import { JobStatusEnum } from "../types/db.types";
 
@@ -25,19 +26,28 @@ export const startWorker = async () => {
           `[WORKER] Job status: ${jobRecord.status}, Last stage: ${jobRecord.last_completed_stage}`,
         );
 
+        // ========== UPDATE JOB STATUS TO PROCESSING ==========
         await jobService.updateJobStatus(
           payload.job_id,
           JobStatusEnum.PROCESSING,
         );
 
         console.log(
-          `[WORKER] Job ${payload.job_id} marked as PROCESSING. Ready for pipeline execution.`,
+          `[WORKER] Job ${payload.job_id} marked as PROCESSING. Starting pipeline execution.`,
+        );
+
+        // ========== EXECUTE PIPELINE ==========
+        // This triggers all stages: parse → normalize → analyze → insights
+        await pipelineService.run(payload.job_id);
+
+        console.log(
+          `[WORKER] Job ${payload.job_id} pipeline execution completed.`,
         );
 
         return {
           success: true,
           jobId: payload.job_id,
-          message: "Job ready for pipeline",
+          message: "Job pipeline execution completed",
         };
       } catch (error) {
         console.error(
