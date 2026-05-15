@@ -96,7 +96,7 @@ const jobService = {
 
     const updatedJob = await jobRepository.updateJob(jobId, {
       status: JobStatusEnum.COMPLETED,
-      last_completed_stage: JobStageEnum.INSIGHTS,
+      last_completed_stage: JobStageEnum.INSIGHTS_GENERATED,
     });
     return updatedJob;
   },

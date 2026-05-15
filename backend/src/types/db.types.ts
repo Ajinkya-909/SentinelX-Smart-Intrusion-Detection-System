@@ -3,39 +3,53 @@
  * Represents PostgreSQL table structures and their TypeScript equivalents
  */
 
+// Import Prisma-generated enum types (source of truth)
+import {
+  job_status_enum,
+  job_stage_enum,
+  job_outcome_enum,
+} from "@/generated/prisma/enums";
+
 // ==========================================
-// ENUM TYPES (Matching PostgreSQL Enums)
+// ENUM TYPES (Using Prisma-generated enums)
 // ==========================================
 
 /**
  * Job Lifecycle Status
- * Represents the current state of a job in the system
+ * Type alias for Prisma-generated job_status_enum
  */
-export enum JobStatusEnum {
-  UPLOADED = "UPLOADED", // Initial state after file upload
-  PROCESSING = "PROCESSING", // Job is being processed by pipeline
-  COMPLETED = "COMPLETED", // All stages completed successfully
-  FAILED = "FAILED", // Job failed at some stage
-}
+export type JobStatusEnum = job_status_enum;
+export const JobStatusEnum = {
+  UPLOADED: "UPLOADED" as const,
+  PROCESSING: "PROCESSING" as const,
+  COMPLETED: "COMPLETED" as const,
+  FAILED: "FAILED" as const,
+};
 
 /**
  * Pipeline Execution Stages
- * Represents checkpoints in the processing pipeline
+ * Type alias for Prisma-generated job_stage_enum
  */
-export enum JobStageEnum {
-  PARSE = "PARSE", // Raw log parsing stage
-  NORMALIZE = "NORMALIZE", // Log normalization stage
-  ANALYZE = "ANALYZE", // Analysis stage
-  INSIGHTS = "INSIGHTS", // Insights generation stage
-}
+export type JobStageEnum = job_stage_enum;
+export const JobStageEnum = {
+  UPLOADED: "UPLOADED" as const,
+  PREPROCESSED: "PREPROCESSED" as const,
+  TYPE_DETECTED: "TYPE_DETECTED" as const,
+  PARSED: "PARSED" as const,
+  NORMALIZED: "NORMALIZED" as const,
+  ANALYZED: "ANALYZED" as const,
+  INSIGHTS_GENERATED: "INSIGHTS_GENERATED" as const,
+  COMPLETED: "COMPLETED" as const,
+};
 
 /**
  * Job Result Outcome
- * Final quality indicator (only set when status = COMPLETED)
+ * Type alias for Prisma-generated job_outcome_enum
  */
-export enum JobOutcomeEnum {
-  SUCCESS = "SUCCESS", // Full success, all stages completed without issues
-  WARNING = "WARNING", // Partial success with warnings (e.g., ML failure)
+export type JobOutcomeEnum = job_outcome_enum;
+export const JobOutcomeEnum = {
+  SUCCESS: "SUCCESS" as const,
+  WARNING: "WARNING" as const,
 }
 
 // ==========================================

@@ -21,16 +21,11 @@ const uploadService = {
         file_size: BigInt(savedFile.size),
       });
     } catch (error) {
-      console.error("Job creation failed, cleaning up uploaded file...", error);
       try {
         await fileService.deleteFile(savedFile.path);
       } catch (deleteError) {
-        console.error(
-          "Failed to cleanup file after job creation error",
-          deleteError,
-        );
+        // Ignore cleanup error
       }
-
       throw new ApiError(500, "Failed to create job after file upload");
     }
 
@@ -45,24 +40,16 @@ const uploadService = {
         timestamp: Date.now(),
       });
     } catch (error) {
-      console.error(
-        "Failed to enqueue job after creation, cleaning up...",
-        error,
-      );
       try {
         await fileService.deleteFile(savedFile.path);
       } catch (deleteError) {
-        console.error("Failed to cleanup file after queue error", deleteError);
+        // Ignore cleanup error
       }
 
-      // Delete the orphaned job row
       try {
         await jobService.deleteJob(job.id);
       } catch (deleteJobError) {
-        console.error(
-          "Failed to cleanup job record after queue error",
-          deleteJobError,
-        );
+        // Ignore cleanup error
       }
 
       throw new ApiError(500, "Failed to queue job for processing");

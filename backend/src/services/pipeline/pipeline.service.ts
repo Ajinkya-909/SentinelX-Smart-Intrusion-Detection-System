@@ -5,10 +5,6 @@ import { ApiError } from "../../utils/api-error";
 
 export const pipelineService = {
   async run(jobId: string): Promise<void> {
-    console.log(
-      `[PIPELINE SERVICE] Starting pipeline execution for job ${jobId}`,
-    );
-
     try {
       const job = await jobService.getJobById(jobId);
       if (!job) {
@@ -24,26 +20,19 @@ export const pipelineService = {
 
       await executeOrchestrator(jobId, job.file_path);
 
-      await jobService.updateJobStage(jobId, JobStageEnum.INSIGHTS, 100);
-      await jobService.markJobCompleted(jobId);
-
-      console.log(`[PIPELINE SERVICE] Job ${jobId} marked as COMPLETED`);
-    } catch (error) {
-      console.error(
-        `[PIPELINE SERVICE ERROR] Pipeline failed for job ${jobId}:`,
-        error,
+      await jobService.updateJobStage(
+        jobId,
+        JobStageEnum.INSIGHTS_GENERATED,
+        100,
       );
-
+      await jobService.markJobCompleted(jobId);
+    } catch (error) {
       try {
         const errorMessage =
           error instanceof Error ? error.message : "Unknown pipeline error";
         await jobService.markJobFailed(jobId, errorMessage);
-        console.log(`[PIPELINE SERVICE] Job ${jobId} marked as FAILED`);
       } catch (markError) {
-        console.error(
-          `[PIPELINE SERVICE ERROR] Failed to mark job as failed:`,
-          markError,
-        );
+        console.error("[PIPELINE ERROR] Failed to mark job as failed");
       }
 
       throw error;

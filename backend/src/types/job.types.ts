@@ -164,10 +164,14 @@ export interface BatchOperationResult {
 }
 
 export const PROGRESS_BY_STAGE: Record<JobStageEnum, number> = {
-  [JobStageEnum.PARSE]: 25,
-  [JobStageEnum.NORMALIZE]: 50,
-  [JobStageEnum.ANALYZE]: 75,
-  [JobStageEnum.INSIGHTS]: 100,
+  [JobStageEnum.UPLOADED]: 0,
+  [JobStageEnum.PREPROCESSED]: 5,
+  [JobStageEnum.TYPE_DETECTED]: 10,
+  [JobStageEnum.PARSED]: 25,
+  [JobStageEnum.NORMALIZED]: 50,
+  [JobStageEnum.ANALYZED]: 75,
+  [JobStageEnum.INSIGHTS_GENERATED]: 100,
+  [JobStageEnum.COMPLETED]: 100,
 };
 
 export function getProgressByStage(stage: JobStageEnum | null): number {
@@ -179,14 +183,18 @@ export function getNextStageFromCompleted(
   lastCompletedStage: JobStageEnum | null,
 ): JobStageEnum | null {
   const stageOrder: JobStageEnum[] = [
-    JobStageEnum.PARSE,
-    JobStageEnum.NORMALIZE,
-    JobStageEnum.ANALYZE,
-    JobStageEnum.INSIGHTS,
+    JobStageEnum.UPLOADED,
+    JobStageEnum.PREPROCESSED,
+    JobStageEnum.TYPE_DETECTED,
+    JobStageEnum.PARSED,
+    JobStageEnum.NORMALIZED,
+    JobStageEnum.ANALYZED,
+    JobStageEnum.INSIGHTS_GENERATED,
+    JobStageEnum.COMPLETED,
   ];
 
   if (!lastCompletedStage) {
-    return JobStageEnum.PARSE;
+    return JobStageEnum.UPLOADED;
   }
 
   const currentIndex = stageOrder.indexOf(lastCompletedStage);

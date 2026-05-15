@@ -11,9 +11,7 @@ export const startWorker = async () => {
     async (job: Job<QueuedJobPayload>) => {
       const payload: QueuedJobPayload = job.data;
 
-      console.log(
-        `[WORKER] Processing job: ${payload.job_id} (User: ${payload.user_id})`,
-      );
+      console.log(`\n[JOB] 📨 Processing: ${payload.file_name}`);
 
       try {
         const jobRecord = await jobService.getJobById(payload.job_id);
@@ -22,27 +20,16 @@ export const startWorker = async () => {
           throw new Error(`Job ${payload.job_id} not found in database`);
         }
 
-        console.log(
-          `[WORKER] Job status: ${jobRecord.status}, Last stage: ${jobRecord.last_completed_stage}`,
-        );
-
-        // ========== UPDATE JOB STATUS TO PROCESSING ==========
+        // Update job status to PROCESSING
         await jobService.updateJobStatus(
           payload.job_id,
           JobStatusEnum.PROCESSING,
         );
 
-        console.log(
-          `[WORKER] Job ${payload.job_id} marked as PROCESSING. Starting pipeline execution.`,
-        );
-
-        // ========== EXECUTE PIPELINE ==========
-        // This triggers all stages: parse → normalize → analyze → insights
+        // Execute pipeline (handles all stages)
         await pipelineService.run(payload.job_id);
 
-        console.log(
-          `[WORKER] Job ${payload.job_id} pipeline execution completed.`,
-        );
+        console.log(`[JOB] ✅ Completed: ${payload.job_id}\n`);
 
         return {
           success: true,
@@ -51,8 +38,7 @@ export const startWorker = async () => {
         };
       } catch (error) {
         console.error(
-          `[WORKER ERROR] Failed to process job ${payload.job_id}:`,
-          error,
+          `[JOB ERROR] ❌ Failed: ${error instanceof Error ? error.message : error}`,
         );
 
         try {
@@ -61,10 +47,7 @@ export const startWorker = async () => {
             error instanceof Error ? error.message : "Unknown error",
           );
         } catch (markError) {
-          console.error(
-            `[WORKER ERROR] Failed to mark job as failed:`,
-            markError,
-          );
+          console.error("[JOB ERROR] Failed to mark job as failed");
         }
 
         throw error;
@@ -79,15 +62,5 @@ export const startWorker = async () => {
     console.error("[WORKER ERROR]", err);
   });
 
-  worker.on("failed", (job, err) => {
-    if (job) {
-      console.error(`[WORKER] Job ${job.id} failed:`, err?.message);
-    }
-  });
-
-  worker.on("completed", (job) => {
-    console.log(`[WORKER] Job ${job.id} completed`);
-  });
-
-  console.log("[WORKER] Started and listening for jobs...");
+  console.log("[WORKER] ✅ Initialized and listening...");
 };

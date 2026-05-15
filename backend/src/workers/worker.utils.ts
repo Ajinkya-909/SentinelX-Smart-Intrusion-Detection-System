@@ -5,10 +5,14 @@ export const getNextStage = (
   lastCompletedStage: JobStageEnum | null,
 ): JobStageEnum => {
   const stageOrder = [
-    JobStageEnum.PARSE,
-    JobStageEnum.NORMALIZE,
-    JobStageEnum.ANALYZE,
-    JobStageEnum.INSIGHTS,
+    JobStageEnum.UPLOADED,
+    JobStageEnum.PREPROCESSED,
+    JobStageEnum.TYPE_DETECTED,
+    JobStageEnum.PARSED,
+    JobStageEnum.NORMALIZED,
+    JobStageEnum.ANALYZED,
+    JobStageEnum.INSIGHTS_GENERATED,
+    JobStageEnum.COMPLETED,
   ];
 
   if (!lastCompletedStage) {
@@ -16,7 +20,7 @@ export const getNextStage = (
   }
 
   const currentIndex = stageOrder.indexOf(lastCompletedStage);
-  return stageOrder[currentIndex + 1] || JobStageEnum.INSIGHTS;
+  return stageOrder[currentIndex + 1] || JobStageEnum.COMPLETED;
 };
 
 export const isJobResumable = (
