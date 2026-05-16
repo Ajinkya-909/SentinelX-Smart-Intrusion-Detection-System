@@ -1,4 +1,5 @@
 import { JobStageEnum } from "../types/db.types";
+import { preprocessorService } from "./preprocessor/preprocessor.service";
 import { parserService } from "./parser/parser.service";
 import { normalizerService } from "./normalizer/normalizer.service";
 import { analyzerService } from "./analyzers/analyzer.service";
@@ -20,38 +21,99 @@ export const executeOrchestrator = async (
     );
     console.log(`[ORCHESTRATOR] File path: ${filePath}\n`);
 
-    // STAGE 4: PARSE (25%)
-    console.log(`[ORCHESTRATOR] 📊 STAGE 1/4: PARSING logs...`);
+    // ================================================
+    // STAGE 0/6: PREPROCESS (16%)
+    // ================================================
+    console.log(`[ORCHESTRATOR] 🧹 STAGE 0/6: PREPROCESSING logs...`);
+    const startPreprocessTime = Date.now();
+
+    let totalPreprocessedLines = 0;
+    const preprocessedBatches = [];
+
+    // Iterate through batches from preprocessing generator
+    for await (const batch of preprocessorService.preprocess(filePath)) {
+      totalPreprocessedLines += batch.metadata.lineCount;
+
+      // Log batch information
+      console.log(
+        `[ORCHESTRATOR] 📦 Batch #${batch.batchNumber}: ${batch.metadata.lineCount} lines | ${Math.round(batch.metadata.estimatedSizeBytes / 1024)}KB | Corrupt: ${batch.metadata.linesRemovedAsCorrupt} | Empty: ${batch.metadata.emptyLinesRemoved}`,
+      );
+
+      // Log sample of preprocessed data (first 3 lines of first batch for visualization)
+      if (batch.batchNumber === 1) {
+        console.log(
+          `[ORCHESTRATOR] 📋 Sample preprocessed lines from Batch #1:`,
+        );
+        batch.rawLines.slice(0, 3).forEach((line, idx) => {
+          console.log(
+            `  [${idx + 1}] ${line.substring(0, 100)}${line.length > 100 ? "..." : ""}`,
+          );
+        });
+        console.log(
+          `  ... and ${batch.metadata.lineCount - 3} more lines in this batch\n`,
+        );
+      }
+
+      // Store batch for type detection (next stage)
+      preprocessedBatches.push(batch);
+    }
+
+    const preprocessTime = Date.now() - startPreprocessTime;
+    await jobService.updateJobStage(jobId, JobStageEnum.PREPROCESSED, 16);
+    console.log(
+      `[ORCHESTRATOR] ✅ PREPROCESS completed in ${preprocessTime}ms - ${totalPreprocessedLines} total logs preprocessed across ${preprocessedBatches.length} batches\n`,
+    );
+
+    // ================================================
+    // STAGE 1/6: TYPE DETECTION (33%)
+    // ================================================
+    // TODO: Implement type detection stage
+    // This will analyze preprocessed batches to detect log format
+    // For now, we'll skip this and proceed to parsing
+    console.log(
+      `[ORCHESTRATOR] 🔍 STAGE 1/6: TYPE DETECTION (SKIPPED - To be implemented)\n`,
+    );
+
+    // ================================================
+    // STAGE 2/6: PARSE (50%)
+    // ================================================
+    console.log(`[ORCHESTRATOR] 📊 STAGE 2/6: PARSING logs...`);
     const startParseTime = Date.now();
     const parsedLogs = await parserService.parse(jobId, filePath);
     const parseTime = Date.now() - startParseTime;
-    await jobService.updateJobStage(jobId, JobStageEnum.PARSED, 25);
+    await jobService.updateJobStage(jobId, JobStageEnum.PARSED, 50);
     console.log(
       `[ORCHESTRATOR] ✅ PARSE completed in ${parseTime}ms - ${parsedLogs?.length || 0} logs parsed\n`,
     );
 
-    // STAGE 5: NORMALIZE (50%)
-    console.log(`[ORCHESTRATOR] 🔄 STAGE 2/4: NORMALIZING logs...`);
+    // ================================================
+    // STAGE 3/6: NORMALIZE (66%)
+    // ================================================
+    console.log(`[ORCHESTRATOR] 🔄 STAGE 3/6: NORMALIZING logs...`);
     const startNormalizeTime = Date.now();
     const normalizedLogs = await normalizerService.normalize(jobId, parsedLogs);
     const normalizeTime = Date.now() - startNormalizeTime;
-    await jobService.updateJobStage(jobId, JobStageEnum.NORMALIZED, 50);
+    await jobService.updateJobStage(jobId, JobStageEnum.NORMALIZED, 66);
     console.log(
       `[ORCHESTRATOR] ✅ NORMALIZE completed in ${normalizeTime}ms - ${normalizedLogs?.length || 0} logs normalized\n`,
     );
 
-    // STAGE 6: ANALYZE (75%)
-    console.log(`[ORCHESTRATOR] 🔍 STAGE 3/4: ANALYZING logs...`);
+    // ================================================
+    // STAGE 4/6: ANALYZE (83%)
+    // ================================================
+    console.log(`[ORCHESTRATOR] 🔍 STAGE 4/6: ANALYZING logs...`);
     const startAnalyzeTime = Date.now();
     const findings = await analyzerService.analyze(jobId, normalizedLogs);
     const analyzeTime = Date.now() - startAnalyzeTime;
-    await jobService.updateJobStage(jobId, JobStageEnum.ANALYZED, 75);
+    await jobService.updateJobStage(jobId, JobStageEnum.ANALYZED, 83);
     console.log(
       `[ORCHESTRATOR] ✅ ANALYZE completed in ${analyzeTime}ms - ${findings?.length || 0} findings detected\n`,
     );
 
-    // STAGE 7: INSIGHTS (100%)
-    console.log(`[ORCHESTRATOR] 💡 STAGE 4/4: GENERATING INSIGHTS...`);
+    // ================================================
+    // STAGE 5/6: INSIGHTS GENERATION (100%)
+    // ================================================
+    console.log(`[ORCHESTRATOR] 💡 STAGE 5/6: GENERATING INSIGHTS...`);
     const startInsightsTime = Date.now();
     const insights = await insightsService.generateInsights(jobId, findings);
     const insightsTime = Date.now() - startInsightsTime;
