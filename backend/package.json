@@ -7,7 +7,8 @@
     "dev": "nodemon --require tsconfig-paths/register --exec ts-node src/index.ts",
     "worker": "nodemon --require tsconfig-paths/register --exec ts-node src/worker.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test:preprocess": "ts-node scripts/test-preprocessor.ts"
   },
   "keywords": [
     "backend"
