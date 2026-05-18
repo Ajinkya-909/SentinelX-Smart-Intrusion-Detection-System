@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs";
-import { PreprocessorService } from "../src/pipeline/preprocessor/preprocessor.service";
+import { PreprocessorService } from "../../src/pipeline/preprocessor/preprocessor.service";
 
 // ================================================
 // SIMPLE PREPROCESSOR TEST SCRIPT
