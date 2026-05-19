@@ -4,6 +4,7 @@ import {
   JobStatusEnum,
   JobStageEnum,
   JobOutcomeEnum,
+  DetectionResult,
 } from "../types/db.types";
 import {
   JobUploadRequest,
@@ -100,6 +101,41 @@ const jobRepository = {
       where: { id: jobId },
     });
     return deletedJob as Job;
+  },
+
+  /**
+   * Update job with type detection metadata
+   * Called from typeDetectorService after detecting log format
+   * @param jobId - UUID of the job
+   * @param metadata - DetectionResult containing detected type, parser, confidence, encoding
+   * @returns - The updated Job object
+   */
+  async updateDetectionMetadata(
+    jobId: string,
+    metadata: DetectionResult,
+  ): Promise<Job> {
+    const updatedJob = await prisma.jobs.update({
+      where: { id: jobId },
+      data: {
+        processing_metadata: metadata as unknown as any,
+        last_completed_stage: JobStageEnum.TYPE_DETECTED,
+      },
+    });
+    return updatedJob as Job;
+  },
+
+  /**
+   * Fetch type detection metadata for a job
+   * Called from parserService to get detected log type and parser strategy
+   * @param jobId - UUID of the job
+   * @returns - DetectionResult if exists, null otherwise
+   */
+  async getDetectionMetadata(jobId: string): Promise<DetectionResult | null> {
+    const job = await prisma.jobs.findUnique({
+      where: { id: jobId },
+      select: { processing_metadata: true },
+    });
+    return (job?.processing_metadata as unknown as DetectionResult) || null;
   },
 };
 

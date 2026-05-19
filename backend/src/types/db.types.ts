@@ -50,6 +50,26 @@ export type JobOutcomeEnum = job_outcome_enum;
 export const JobOutcomeEnum = {
   SUCCESS: "SUCCESS" as const,
   WARNING: "WARNING" as const,
+};
+
+// ==========================================
+// DETECTION RESULT TYPE
+// ==========================================
+
+/**
+ * Type Detection Result
+ * Metadata about detected log format and parser strategy
+ * Stored in jobs.processing_metadata
+ */
+export interface DetectionResult {
+  detectedType: string; // NGINX_ACCESS, SYSLOG, JSON, CSV, GENERIC, etc
+  confidence: number; // 0-1 (e.g., 0.85 = 85% confidence)
+  parser: string; // Parser strategy to use (e.g., "nginxParserV1", "syslogParserV1")
+  encoding: string; // Detected encoding (utf8, utf16le, etc)
+  patterns: {
+    matched: string[]; // Which patterns matched (for debugging)
+    analysis: Record<string, number>; // Confidence per detector type
+  };
 }
 
 // ==========================================
@@ -109,6 +129,7 @@ export interface Job {
   progress: number; // Progress percentage (0-100)
   retry_count: number; // Number of retry attempts
   error_message: string | null; // Failure reason if status = FAILED
+  processing_metadata: DetectionResult | null; // Type detection result from Stage 3
   created_at: Date; // Job creation timestamp
   updated_at: Date; // Last update timestamp
   deleted_at: Date | null; // Soft delete timestamp

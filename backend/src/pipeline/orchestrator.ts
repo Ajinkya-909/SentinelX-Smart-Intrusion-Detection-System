@@ -5,6 +5,7 @@ import { normalizerService } from "./normalizer/normalizer.service";
 import { analyzerService } from "./analyzers/analyzer.service";
 import { insightsService } from "./insights/insights.service";
 import { jobService } from "../services/jobs/job.service";
+import { typeDetectorService } from "./type-detector/type-detector.service";
 
 export const executeOrchestrator = async (
   jobId: string,
@@ -67,11 +68,29 @@ export const executeOrchestrator = async (
     // ================================================
     // STAGE 1/6: TYPE DETECTION (33%)
     // ================================================
-    // TODO: Implement type detection stage
-    // This will analyze preprocessed batches to detect log format
-    // For now, we'll skip this and proceed to parsing
+    console.log(`[ORCHESTRATOR] 🔍 STAGE 1/6: TYPE DETECTION...`);
+    const startTypeDetectTime = Date.now();
+
+    // Get first batch for type detection
+    const firstBatch = preprocessedBatches[0];
+    if (!firstBatch) {
+      throw new Error(
+        "[ORCHESTRATOR] No preprocessed batches found for type detection",
+      );
+    }
+
+    // Run detection on first batch only
+    const detectionResult = await typeDetectorService.detect(
+      firstBatch.rawLines,
+    );
+
+    // Store detection metadata to database
+    await typeDetectorService.updateDetectionMetadata(jobId, detectionResult);
+
+    const typeDetectTime = Date.now() - startTypeDetectTime;
+    await jobService.updateJobStage(jobId, JobStageEnum.TYPE_DETECTED, 33);
     console.log(
-      `[ORCHESTRATOR] 🔍 STAGE 1/6: TYPE DETECTION (SKIPPED - To be implemented)\n`,
+      `[ORCHESTRATOR] ✅ TYPE DETECTION completed in ${typeDetectTime}ms - Detected: ${detectionResult.detectedType} (${Math.round(detectionResult.confidence * 100)}% confidence)\n`,
     );
 
     // ================================================
