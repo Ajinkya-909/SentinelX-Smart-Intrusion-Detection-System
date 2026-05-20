@@ -88,14 +88,23 @@ export const executeOrchestrator = async (
         `[ORCHESTRATOR] 🔄 STAGE 3/5: NORMALIZING batch #${batchCount}...`,
       );
       const startNormalizeTime = Date.now();
-      const normalizedLogs = await normalizerService.normalize(
+      const normalizationResult = await normalizerService.normalize(
         jobId,
         parsedLogs,
+        detectionResult,
       );
       const normalizeTime = Date.now() - startNormalizeTime;
-      console.log(
-        `[ORCHESTRATOR]   ✓ Normalize: ${normalizedLogs?.length || 0} logs normalized (${normalizeTime}ms)`,
-      );
+
+      if (normalizationResult.success) {
+        await jobService.updateJobStage(jobId, JobStageEnum.NORMALIZED, 40);
+        console.log(
+          `[ORCHESTRATOR]   ✓ Normalize: ${normalizationResult.stats.successfullyNormalized} logs normalized, ${normalizationResult.failedCount} failed (${normalizeTime}ms)`,
+        );
+      } else {
+        throw new Error(
+          `Normalization failed: ${JSON.stringify(normalizationResult)}`,
+        );
+      }
 
       // ================================================
       // STAGE 4: ANALYZE (Each batch)
@@ -104,7 +113,10 @@ export const executeOrchestrator = async (
         `[ORCHESTRATOR] 🔍 STAGE 4/5: ANALYZING batch #${batchCount}...`,
       );
       const startAnalyzeTime = Date.now();
-      const findings = await analyzerService.analyze(jobId, normalizedLogs);
+      const findings = await analyzerService.analyze(
+        jobId,
+        normalizationResult.normalizedLogs,
+      );
       const analyzeTime = Date.now() - startAnalyzeTime;
       console.log(
         `[ORCHESTRATOR]   ✓ Analyze: ${findings?.length || 0} findings detected (${analyzeTime}ms)`,
@@ -140,7 +152,7 @@ export const executeOrchestrator = async (
       );
       await jobService.updateJobStage(
         jobId,
-        JobStageEnum.INSIGHTS_GENERATED,
+        JobStageEnum.ANALYZED,
         progressPercent,
       );
 
