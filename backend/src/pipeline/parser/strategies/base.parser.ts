@@ -26,7 +26,10 @@ export abstract class BaseParser {
 
     for (let lineNum = 0; lineNum < lines.length; lineNum++) {
       try {
-        const parsed = this.parseLine(lines[lineNum]);
+        const line = lines[lineNum];
+        if (!line) continue; // Skip if somehow undefined
+
+        const parsed = this.parseLine(line);
         if (parsed) {
           parsedLogs.push(parsed);
           successCount++;
@@ -34,7 +37,7 @@ export abstract class BaseParser {
       } catch (error) {
         failedLines.push({
           lineNumber: lineNum + 1,
-          rawLine: lines[lineNum],
+          rawLine: lines[lineNum] || "",
           error: error instanceof Error ? error.message : String(error),
         });
       }

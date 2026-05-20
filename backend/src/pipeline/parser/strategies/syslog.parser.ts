@@ -94,19 +94,16 @@ export class SyslogParser extends BaseParser {
     match: RegExpMatchArray,
     rawLine: string,
   ): ParsedLog | null {
-    const [
-      ,
-      year,
-      month,
-      day,
-      hours,
-      minutes,
-      seconds,
-      hostname,
-      service,
-      pid,
-      message,
-    ] = match;
+    const year = match[1] || "2024";
+    const month = match[2] || "01";
+    const day = match[3] || "01";
+    const hours = match[4] || "00";
+    const minutes = match[5] || "00";
+    const seconds = match[6] || "00";
+    const hostname = match[7] || "unknown";
+    const service = match[8] || "unknown";
+    const pid = match[9];
+    const message = match[10] || "";
 
     const timestamp = new Date(
       Date.UTC(
@@ -121,20 +118,20 @@ export class SyslogParser extends BaseParser {
 
     const logLevel = this.extractSyslogLevel(message);
 
-    return {
+    const parsedLog: ParsedLog = {
       timestamp,
       logLevel,
-      message: message.substring(0, 200), // Truncate very long messages
-      sourceIp: undefined, // Syslog doesn't typically contain source IP
-      user: undefined,
-      statusCode: undefined,
+      message: message.substring(0, 200),
       raw: rawLine,
       metadata: {
-        hostname: hostname || undefined,
-        service: service || undefined,
-        pid: pid ? parseInt(pid, 10) : undefined,
+        hostname,
+        service,
       },
     };
+
+    if (pid) parsedLog.metadata.pid = parseInt(pid, 10);
+
+    return parsedLog;
   }
 
   /**
@@ -144,18 +141,15 @@ export class SyslogParser extends BaseParser {
     match: RegExpMatchArray,
     rawLine: string,
   ): ParsedLog | null {
-    const [
-      ,
-      month,
-      day,
-      hours,
-      minutes,
-      seconds,
-      hostname,
-      service,
-      pid,
-      message,
-    ] = match;
+    const month = match[1] || "Jan";
+    const day = match[2] || "01";
+    const hours = match[3] || "00";
+    const minutes = match[4] || "00";
+    const seconds = match[5] || "00";
+    const hostname = match[6] || "unknown";
+    const service = match[7] || "unknown";
+    const pid = match[8];
+    const message = match[9] || "";
 
     // RFC 3164 doesn't include year - use current year or guess from log
     const now = new Date();
@@ -180,20 +174,20 @@ export class SyslogParser extends BaseParser {
 
     const logLevel = this.extractSyslogLevel(message);
 
-    return {
+    const parsedLog: ParsedLog = {
       timestamp,
       logLevel,
       message: message.substring(0, 200),
-      sourceIp: undefined,
-      user: undefined,
-      statusCode: undefined,
       raw: rawLine,
       metadata: {
-        hostname: hostname || undefined,
-        service: service || undefined,
-        pid: pid ? parseInt(pid, 10) : undefined,
+        hostname,
+        service,
       },
     };
+
+    if (pid) parsedLog.metadata.pid = parseInt(pid, 10);
+
+    return parsedLog;
   }
 
   /**
@@ -203,25 +197,28 @@ export class SyslogParser extends BaseParser {
     match: RegExpMatchArray,
     rawLine: string,
   ): ParsedLog | null {
-    const [, timeStr, service, pid, message] = match;
+    const timeStr = match[1] || "";
+    const service = match[2] || "unknown";
+    const pid = match[3];
+    const message = match[4] || "";
 
     // Try to parse timestamp from the leading text
     const timestamp = this.parseTimestamp(timeStr);
     const logLevel = this.extractSyslogLevel(message);
 
-    return {
+    const parsedLog: ParsedLog = {
       timestamp,
       logLevel,
       message: message.substring(0, 200),
-      sourceIp: undefined,
-      user: undefined,
-      statusCode: undefined,
       raw: rawLine,
       metadata: {
-        service: service || undefined,
-        pid: pid ? parseInt(pid, 10) : undefined,
+        service,
       },
     };
+
+    if (pid) parsedLog.metadata.pid = parseInt(pid, 10);
+
+    return parsedLog;
   }
 
   /**

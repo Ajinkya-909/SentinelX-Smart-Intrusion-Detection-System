@@ -65,18 +65,31 @@ export class JsonParser extends BaseParser {
         return null;
       }
 
-      return {
+      const validatedIp = sourceIp
+        ? this.validateIp(String(sourceIp))
+        : undefined;
+      const parsedUser = user ? String(user) : undefined;
+      const parsedStatusCode = statusCode
+        ? parseInt(String(statusCode), 10)
+        : undefined;
+
+      const parsedLog: ParsedLog = {
         timestamp: timestamp ? this.parseTimestamp(timestamp) : new Date(),
         logLevel: level ? String(level).toUpperCase() : "INFO",
         message: String(message),
-        sourceIp: sourceIp ? this.validateIp(String(sourceIp)) : undefined,
-        user: user ? String(user) : undefined,
-        statusCode: statusCode ? parseInt(String(statusCode), 10) : undefined,
         raw: line,
         metadata: {
           ...json, // Store the entire JSON as metadata
         },
       };
+
+      // Only add optional fields if they have values
+      if (validatedIp) parsedLog.sourceIp = validatedIp;
+      if (parsedUser) parsedLog.user = parsedUser;
+      if (parsedStatusCode !== undefined)
+        parsedLog.statusCode = parsedStatusCode;
+
+      return parsedLog;
     } catch (error) {
       throw new Error(
         `Failed to parse JSON log: ${error instanceof Error ? error.message : String(error)}`,

@@ -1,6 +1,4 @@
-import fs from "fs";
 import logger from "../../config/logger";
-import { typeDetectorService } from "../type-detector/type-detector.service";
 import { nginxParser } from "./strategies/nginx.parser";
 import { syslogParser } from "./strategies/syslog.parser";
 import { jsonParser } from "./strategies/json.parser";
@@ -11,69 +9,50 @@ import { ParsedLog } from "./types";
 /**
  * Parser Service
  * Routes log parsing to type-specific parser implementations
- * Coordinates between type detection result and parsing execution
+ * Processes a single batch of preprocessed lines at a time
+ *
+ * IMPORTANT: This service does NOT read files. It only parses preprocessed batches.
+ * File reading is done by preprocessing service in streaming batches.
  */
 class ParserService {
   /**
-   * Main parse orchestration method
-   * @param jobId - Job identifier
-   * @param filePath - Path to log file to parse
-   * @returns - Array of parsed log entries
+   * Parse a single batch of preprocessed log lines
+   * Called from orchestrator for each batch after preprocessing
+   *
+   * @param rawLines - Array of preprocessed raw log lines (from one batch)
+   * @param detectedType - Log type detected by type detection (e.g., "NGINX_ACCESS", "SYSLOG")
+   * @returns - Array of parsed log entries (in-memory, not persisted)
    */
-  async parse(jobId: string, filePath: string): Promise<ParsedLog[]> {
+  async parseBatch(
+    rawLines: string[],
+    detectedType: string,
+  ): Promise<ParsedLog[]> {
     logger.info(
-      `[PARSER_SERVICE] Starting parse orchestration for job ${jobId}`,
+      `[PARSER_SERVICE] Parsing batch of ${rawLines.length} lines for type: ${detectedType}`,
     );
 
     try {
       // ================================================
-      // STEP 1: Fetch detection metadata from database
+      // Select appropriate parser based on detected type
       // ================================================
-      logger.info(
-        `[PARSER_SERVICE] Fetching detection metadata for job ${jobId}`,
-      );
-      const detectionMetadata =
-        await typeDetectorService.getDetectionMetadata(jobId);
-
-      if (!detectionMetadata) {
-        throw new Error(
-          `[PARSER_SERVICE] No detection metadata found for job ${jobId}. Type detection must complete before parsing.`,
-        );
-      }
-
-      logger.info(
-        `[PARSER_SERVICE] Detection metadata retrieved: Type=${detectionMetadata.detectedType}, Parser=${detectionMetadata.parser}`,
+      const parser = this.selectParser(detectedType);
+      logger.debug(
+        `[PARSER_SERVICE] Selected parser: ${parser.constructor.name}`,
       );
 
       // ================================================
-      // STEP 2: Read file into lines
+      // Parse the batch
       // ================================================
-      logger.info(`[PARSER_SERVICE] Reading file: ${filePath}`);
-      const rawLines = await this.readFileLines(filePath);
-      logger.info(`[PARSER_SERVICE] Read ${rawLines.length} lines from file`);
-
-      // ================================================
-      // STEP 3: Select appropriate parser based on detected type
-      // ================================================
-      const parser = this.selectParser(detectionMetadata.detectedType);
-      logger.info(
-        `[PARSER_SERVICE] Selected parser: ${parser.constructor.name} for type ${detectionMetadata.detectedType}`,
-      );
-
-      // ================================================
-      // STEP 4: Parse all lines
-      // ================================================
-      logger.info(`[PARSER_SERVICE] Parsing ${rawLines.length} lines...`);
       const result = await parser.parse(rawLines);
 
       logger.info(
-        `[PARSER_SERVICE] Parse complete: ${result.stats.successfullyParsed}/${result.stats.totalLines} successful`,
+        `[PARSER_SERVICE] Batch parse complete: ${result.stats.successfullyParsed}/${result.stats.totalLines} successful`,
       );
 
-      // Log any parsing failures
+      // Log parsing failures if any
       if (result.failedLines.length > 0) {
         logger.warn(
-          `[PARSER_SERVICE] ${result.failedLines.length} lines failed to parse`,
+          `[PARSER_SERVICE] ${result.failedLines.length} lines failed to parse in this batch`,
         );
 
         // Log first few failures for debugging
@@ -87,28 +66,9 @@ class ParserService {
       return result.parsedLogs;
     } catch (error) {
       logger.error(
-        `[PARSER_SERVICE] Parse failed for job ${jobId}: ${error instanceof Error ? error.message : String(error)}`,
+        `[PARSER_SERVICE] Parse failed for batch: ${error instanceof Error ? error.message : String(error)}`,
       );
       throw error;
-    }
-  }
-
-  /**
-   * Read file and return array of lines
-   * @param filePath - Path to file
-   * @returns - Array of trimmed lines
-   */
-  private async readFileLines(filePath: string): Promise<string[]> {
-    try {
-      const content = fs.readFileSync(filePath, "utf8");
-      const lines = content
-        .split("\n")
-        .filter((line) => line.trim().length > 0);
-      return lines;
-    } catch (error) {
-      throw new Error(
-        `Failed to read file ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
-      );
     }
   }
 

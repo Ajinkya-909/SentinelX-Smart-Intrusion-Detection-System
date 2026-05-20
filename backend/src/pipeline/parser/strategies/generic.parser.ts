@@ -64,20 +64,24 @@ export class GenericParser extends BaseParser {
       const logLevel = this.extractLogLevel(line);
       const sourceIp = this.extractIp(line);
       const statusCode = this.extractStatusCode(line);
+      const validatedIp = sourceIp ? this.validateIp(sourceIp) : undefined;
 
-      return {
+      const parsedLog: ParsedLog = {
         timestamp: timestamp || new Date(),
         logLevel,
         message: line.substring(0, 1000), // Truncate very long lines
-        sourceIp: sourceIp ? this.validateIp(sourceIp) : undefined,
-        user: undefined, // Generic parser can't reliably extract user
-        statusCode,
         raw: line,
         metadata: {
           parser: "generic",
           truncated: line.length > 1000,
         },
       };
+
+      // Only add optional fields if they have values
+      if (validatedIp) parsedLog.sourceIp = validatedIp;
+      if (statusCode !== undefined) parsedLog.statusCode = statusCode;
+
+      return parsedLog;
     } catch (error) {
       throw new Error(
         `Failed to parse generic log: ${error instanceof Error ? error.message : String(error)}`,
@@ -91,7 +95,7 @@ export class GenericParser extends BaseParser {
   private extractTimestamp(line: string): Date | undefined {
     for (const pattern of this.timestampPatterns) {
       const match = line.match(pattern);
-      if (match) {
+      if (match && match[1]) {
         try {
           const parsed = this.parseTimestamp(match[1]);
           if (!isNaN(parsed.getTime())) {
@@ -146,7 +150,7 @@ export class GenericParser extends BaseParser {
    */
   private extractStatusCode(line: string): number | undefined {
     const match = line.match(this.statusPattern);
-    if (match) {
+    if (match && match[1]) {
       return parseInt(match[1], 10);
     }
     return undefined;

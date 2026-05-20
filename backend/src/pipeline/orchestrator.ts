@@ -23,137 +23,153 @@ export const executeOrchestrator = async (
     console.log(`[ORCHESTRATOR] File path: ${filePath}\n`);
 
     // ================================================
-    // STAGE 0/6: PREPROCESS (16%)
+    // STREAMING PIPELINE: Process each batch through all stages
+    // This prevents loading entire file into memory
     // ================================================
-    console.log(`[ORCHESTRATOR] 🧹 STAGE 0/6: PREPROCESSING logs...`);
-    const startPreprocessTime = Date.now();
 
-    let totalPreprocessedLines = 0;
-    const preprocessedBatches = [];
+    let batchCount = 0;
+    let totalLinesProcessed = 0;
+    let detectionResult: any = null;
+    const allInsights: any[] = [];
 
-    // Iterate through batches from preprocessing generator
+    // Iterate through batches from preprocessing
     for await (const batch of preprocessorService.preprocess(filePath)) {
-      totalPreprocessedLines += batch.metadata.lineCount;
+      batchCount++;
 
-      // Log batch information
       console.log(
-        `[ORCHESTRATOR] 📦 Batch #${batch.batchNumber}: ${batch.metadata.lineCount} lines | ${Math.round(batch.metadata.estimatedSizeBytes / 1024)}KB | Corrupt: ${batch.metadata.linesRemovedAsCorrupt} | Empty: ${batch.metadata.emptyLinesRemoved}`,
+        `\n[ORCHESTRATOR] 📦 Processing Batch #${batch.batchNumber}: ${batch.metadata.lineCount} lines`,
       );
 
-      // Log sample of preprocessed data (first 3 lines of first batch for visualization)
-      if (batch.batchNumber === 1) {
+      // ================================================
+      // STAGE 1: TYPE DETECTION (Only on first batch)
+      // ================================================
+      if (batchCount === 1) {
         console.log(
-          `[ORCHESTRATOR] 📋 Sample preprocessed lines from Batch #1:`,
+          `[ORCHESTRATOR] 🔍 STAGE 1/5: TYPE DETECTION (first batch only)...`,
         );
-        batch.rawLines.slice(0, 3).forEach((line, idx) => {
-          console.log(
-            `  [${idx + 1}] ${line.substring(0, 100)}${line.length > 100 ? "..." : ""}`,
-          );
-        });
+        const startTypeDetectTime = Date.now();
+
+        // Run detection on first batch only
+        detectionResult = await typeDetectorService.detect(batch.rawLines);
+
+        // Store detection metadata to database
+        await typeDetectorService.updateDetectionMetadata(
+          jobId,
+          detectionResult,
+        );
+
+        const typeDetectTime = Date.now() - startTypeDetectTime;
+        await jobService.updateJobStage(jobId, JobStageEnum.TYPE_DETECTED, 20);
         console.log(
-          `  ... and ${batch.metadata.lineCount - 3} more lines in this batch\n`,
+          `[ORCHESTRATOR] ✅ TYPE DETECTION completed in ${typeDetectTime}ms - Detected: ${detectionResult.detectedType} (${Math.round(detectionResult.confidence * 100)}% confidence)`,
         );
       }
 
-      // Store batch for type detection (next stage)
-      preprocessedBatches.push(batch);
-    }
+      // ================================================
+      // STAGE 2: PARSE (Each batch)
+      // ================================================
+      console.log(
+        `[ORCHESTRATOR] 📊 STAGE 2/5: PARSING batch #${batchCount}...`,
+      );
+      const startParseTime = Date.now();
+      const parsedLogs = await parserService.parseBatch(
+        batch.rawLines,
+        detectionResult.detectedType,
+      );
+      const parseTime = Date.now() - startParseTime;
+      console.log(
+        `[ORCHESTRATOR]   ✓ Parse: ${parsedLogs.length}/${batch.metadata.lineCount} logs parsed (${parseTime}ms)`,
+      );
 
-    const preprocessTime = Date.now() - startPreprocessTime;
-    await jobService.updateJobStage(jobId, JobStageEnum.PREPROCESSED, 16);
-    console.log(
-      `[ORCHESTRATOR] ✅ PREPROCESS completed in ${preprocessTime}ms - ${totalPreprocessedLines} total logs preprocessed across ${preprocessedBatches.length} batches\n`,
-    );
+      // ================================================
+      // STAGE 3: NORMALIZE (Each batch)
+      // ================================================
+      console.log(
+        `[ORCHESTRATOR] 🔄 STAGE 3/5: NORMALIZING batch #${batchCount}...`,
+      );
+      const startNormalizeTime = Date.now();
+      const normalizedLogs = await normalizerService.normalize(
+        jobId,
+        parsedLogs,
+      );
+      const normalizeTime = Date.now() - startNormalizeTime;
+      console.log(
+        `[ORCHESTRATOR]   ✓ Normalize: ${normalizedLogs?.length || 0} logs normalized (${normalizeTime}ms)`,
+      );
 
-    // ================================================
-    // STAGE 1/6: TYPE DETECTION (33%)
-    // ================================================
-    console.log(`[ORCHESTRATOR] 🔍 STAGE 1/6: TYPE DETECTION...`);
-    const startTypeDetectTime = Date.now();
+      // ================================================
+      // STAGE 4: ANALYZE (Each batch)
+      // ================================================
+      console.log(
+        `[ORCHESTRATOR] 🔍 STAGE 4/5: ANALYZING batch #${batchCount}...`,
+      );
+      const startAnalyzeTime = Date.now();
+      const findings = await analyzerService.analyze(jobId, normalizedLogs);
+      const analyzeTime = Date.now() - startAnalyzeTime;
+      console.log(
+        `[ORCHESTRATOR]   ✓ Analyze: ${findings?.length || 0} findings detected (${analyzeTime}ms)`,
+      );
 
-    // Get first batch for type detection
-    const firstBatch = preprocessedBatches[0];
-    if (!firstBatch) {
-      throw new Error(
-        "[ORCHESTRATOR] No preprocessed batches found for type detection",
+      // ================================================
+      // STAGE 5: INSIGHTS GENERATION (Each batch)
+      // ================================================
+      console.log(
+        `[ORCHESTRATOR] 💡 STAGE 5/5: GENERATING INSIGHTS for batch #${batchCount}...`,
+      );
+      const startInsightsTime = Date.now();
+      const batchInsights = await insightsService.generateInsights(
+        jobId,
+        findings,
+      );
+      const insightsTime = Date.now() - startInsightsTime;
+      console.log(
+        `[ORCHESTRATOR]   ✓ Insights: ${batchInsights?.length || 0} insights generated (${insightsTime}ms)`,
+      );
+
+      // Accumulate insights from all batches
+      if (batchInsights) {
+        allInsights.push(...batchInsights);
+      }
+
+      totalLinesProcessed += batch.metadata.lineCount;
+
+      // Update progress
+      const progressPercent = Math.min(
+        95,
+        Math.round((totalLinesProcessed / batch.totalProcessedSoFar) * 95),
+      );
+      await jobService.updateJobStage(
+        jobId,
+        JobStageEnum.INSIGHTS_GENERATED,
+        progressPercent,
+      );
+
+      console.log(
+        `[ORCHESTRATOR] ✅ Batch #${batchCount} complete - Total lines processed: ${totalLinesProcessed}`,
       );
     }
 
-    // Run detection on first batch only
-    const detectionResult = await typeDetectorService.detect(
-      firstBatch.rawLines,
-    );
-
-    // Store detection metadata to database
-    await typeDetectorService.updateDetectionMetadata(jobId, detectionResult);
-
-    const typeDetectTime = Date.now() - startTypeDetectTime;
-    await jobService.updateJobStage(jobId, JobStageEnum.TYPE_DETECTED, 33);
-    console.log(
-      `[ORCHESTRATOR] ✅ TYPE DETECTION completed in ${typeDetectTime}ms - Detected: ${detectionResult.detectedType} (${Math.round(detectionResult.confidence * 100)}% confidence)\n`,
-    );
-
     // ================================================
-    // STAGE 2/6: PARSE (50%)
+    // PIPELINE COMPLETE
     // ================================================
-    console.log(`[ORCHESTRATOR] 📊 STAGE 2/6: PARSING logs...`);
-    const startParseTime = Date.now();
-    const parsedLogs = await parserService.parse(jobId, filePath);
-    const parseTime = Date.now() - startParseTime;
-    await jobService.updateJobStage(jobId, JobStageEnum.PARSED, 50);
-    console.log(
-      `[ORCHESTRATOR] ✅ PARSE completed in ${parseTime}ms - ${parsedLogs?.length || 0} logs parsed\n`,
-    );
-
-    // ================================================
-    // STAGE 3/6: NORMALIZE (66%)
-    // ================================================
-    console.log(`[ORCHESTRATOR] 🔄 STAGE 3/6: NORMALIZING logs...`);
-    const startNormalizeTime = Date.now();
-    const normalizedLogs = await normalizerService.normalize(jobId, parsedLogs);
-    const normalizeTime = Date.now() - startNormalizeTime;
-    await jobService.updateJobStage(jobId, JobStageEnum.NORMALIZED, 66);
-    console.log(
-      `[ORCHESTRATOR] ✅ NORMALIZE completed in ${normalizeTime}ms - ${normalizedLogs?.length || 0} logs normalized\n`,
-    );
-
-    // ================================================
-    // STAGE 4/6: ANALYZE (83%)
-    // ================================================
-    console.log(`[ORCHESTRATOR] 🔍 STAGE 4/6: ANALYZING logs...`);
-    const startAnalyzeTime = Date.now();
-    const findings = await analyzerService.analyze(jobId, normalizedLogs);
-    const analyzeTime = Date.now() - startAnalyzeTime;
-    await jobService.updateJobStage(jobId, JobStageEnum.ANALYZED, 83);
-    console.log(
-      `[ORCHESTRATOR] ✅ ANALYZE completed in ${analyzeTime}ms - ${findings?.length || 0} findings detected\n`,
-    );
-
-    // ================================================
-    // STAGE 5/6: INSIGHTS GENERATION (100%)
-    // ================================================
-    console.log(`[ORCHESTRATOR] 💡 STAGE 5/6: GENERATING INSIGHTS...`);
-    const startInsightsTime = Date.now();
-    const insights = await insightsService.generateInsights(jobId, findings);
-    const insightsTime = Date.now() - startInsightsTime;
     await jobService.updateJobStage(
       jobId,
       JobStageEnum.INSIGHTS_GENERATED,
       100,
     );
-    console.log(
-      `[ORCHESTRATOR] ✅ INSIGHTS completed in ${insightsTime}ms - ${insights?.length || 0} insights generated\n`,
-    );
 
     console.log(
-      `========== [ORCHESTRATOR] Pipeline COMPLETED for job ${jobId} ==========\n`,
+      `\n========== [ORCHESTRATOR] Pipeline COMPLETED for job ${jobId} ==========`,
+    );
+    console.log(
+      `[ORCHESTRATOR] Summary: ${batchCount} batches | ${totalLinesProcessed} total logs | ${allInsights.length} insights generated\n`,
     );
 
     return {
       success: true,
       jobId,
       lastStage: JobStageEnum.INSIGHTS_GENERATED,
-      insights,
+      insights: allInsights,
     };
   } catch (error) {
     console.error(
