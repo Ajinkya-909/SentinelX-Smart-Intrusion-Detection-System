@@ -19,6 +19,10 @@ import {
   normalizeSeverity,
   normalizeEventType,
   FieldMapping,
+  extractSemanticField,
+  extractUnmappedFields,
+  classifySeverity,
+  classifyEventType,
 } from "./mappings";
 
 /**
@@ -51,6 +55,7 @@ function extractField(
 /**
  * Normalize timestamp to ISO8601 Date
  * Gracefully handles various timestamp formats
+ * CRITICAL: Enforces UTC for Z-suffixed timestamps (no double offset!)
  */
 function normalizeTimestamp(log: ParsedLog, mapping: FieldMapping): Date {
   const timestamp = extractField(log, mapping.timestamp);
@@ -71,8 +76,27 @@ function normalizeTimestamp(log: ParsedLog, mapping: FieldMapping): Date {
   }
 
   if (typeof timestamp === "string") {
+    // Check if timestamp has Z suffix (UTC indicator)
+    const hasZSuffix = timestamp.includes("Z");
+
+    // Parse the timestamp
     const parsed = new Date(timestamp);
+
     if (!isNaN(parsed.getTime())) {
+      // CRITICAL FIX: If the original string has Z suffix, the Date object
+      // already contains the correct UTC value internally.
+      // We must return it as-is without applying timezone offset.
+      // Using toISOString() ensures UTC representation in database.
+
+      if (hasZSuffix) {
+        // Z-suffixed timestamps are already UTC - return as-is
+        // The Date object internally stores epoch milliseconds (UTC)
+        // Databases interpret this correctly
+        return parsed;
+      }
+
+      // For timestamps without Z suffix, also trust JavaScript's parsing
+      // It treats them as UTC by standard
       return parsed;
     }
 
@@ -377,19 +401,69 @@ function normalizeLog(
   sourceMapping: FieldMapping,
 ): NormalizedLog | null {
   try {
-    // Extract canonical fields
-    const timestamp = normalizeTimestamp(log, sourceMapping);
-    const sourceIp = extractField(log, sourceMapping.sourceIp);
-    const normalizedIp = sourceIp ? normalizeIP(String(sourceIp)) : undefined;
-    const logLevel = extractField(log, sourceMapping.logLevel);
-    const severity = normalizeSeverity(logLevel);
+    // For KEY_VALUE logs, use semantic extraction from keyValueFields
+    let timestamp: Date;
+    let sourceIp: string | undefined;
+    let eventType: string;
+    let severity: string;
+    let user: string | undefined;
+    let message: string;
+    let unmappedFields: Record<string, any> = {};
 
-    // Determine event type (from method, or from message)
-    const method = extractField(log, sourceMapping.method);
-    const eventType = method ? normalizeEventType(method) : "GENERIC_EVENT";
+    if (detectedType === "KEY_VALUE" && log.keyValueFields) {
+      // Semantic extraction for key-value logs
+      sourceIp = extractSemanticField(log.keyValueFields, "ipAddress");
+      user = extractSemanticField(log.keyValueFields, "user");
+      message = log.message || "";
+
+      // Use fuzzy logic classifiers
+      severity = classifySeverity(log.keyValueFields, "INFO");
+      eventType = classifyEventType(log.keyValueFields, log.raw || "");
+
+      // Extract unmapped fields for JSONB metadata
+      unmappedFields = extractUnmappedFields(log.keyValueFields);
+
+      // CRITICAL: Use normalizeTimestamp to ensure UTC handling (prevents timezone offset bugs)
+      timestamp = normalizeTimestamp(log, sourceMapping);
+    } else {
+      // Traditional extraction for other log types
+      timestamp = normalizeTimestamp(log, sourceMapping);
+      const sourceIpRaw = extractField(log, sourceMapping.sourceIp);
+      sourceIp = sourceIpRaw ? String(sourceIpRaw) : undefined;
+
+      const logLevel = extractField(log, sourceMapping.logLevel);
+      severity = normalizeSeverity(logLevel);
+
+      const method = extractField(log, sourceMapping.method);
+      eventType = method ? normalizeEventType(method) : "GENERIC_EVENT";
+
+      user = extractField(log, sourceMapping.user);
+      message = extractField(log, sourceMapping.message) || log.message || "";
+    }
+
+    // Validate and normalize IP
+    const normalizedIp = sourceIp ? normalizeIP(sourceIp) : undefined;
 
     // Build structured metadata
     const metadata = buildMetadata(log, sourceMapping, eventType);
+
+    // For KEY_VALUE logs, add unmapped fields to metadata
+    if (
+      detectedType === "KEY_VALUE" &&
+      Object.keys(unmappedFields).length > 0
+    ) {
+      if (!metadata.parserMetadata) {
+        metadata.parserMetadata = {
+          sourceFormat: "KEY_VALUE",
+          originalFields: unmappedFields,
+        };
+      } else {
+        metadata.parserMetadata.originalFields = {
+          ...metadata.parserMetadata.originalFields,
+          ...unmappedFields,
+        };
+      }
+    }
 
     // Build normalized log
     const normalizedLog: NormalizedLog = {

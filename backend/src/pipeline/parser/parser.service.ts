@@ -2,6 +2,7 @@ import logger from "../../config/logger";
 import { nginxParser } from "./strategies/nginx.parser";
 import { syslogParser } from "./strategies/syslog.parser";
 import { jsonParser } from "./strategies/json.parser";
+import { keyValueParser } from "./strategies/keyvalue.parser";
 import { genericParser } from "./strategies/generic.parser";
 import { BaseParser } from "./strategies/base.parser";
 import { ParsedLog } from "./types";
@@ -89,6 +90,12 @@ class ParserService {
 
       case "JSON":
         return jsonParser;
+
+      case "KEY_VALUE":
+        logger.info(
+          `[PARSER_SERVICE] Using key-value parser for type: ${detectedType}`,
+        );
+        return keyValueParser;
 
       case "GENERIC":
       default:

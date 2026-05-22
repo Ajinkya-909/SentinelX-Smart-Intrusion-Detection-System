@@ -5,6 +5,7 @@ import {
   nginxDetector,
   syslogDetector,
   jsonDetector,
+  keyValueDetector,
   genericDetector,
   DetectorResult,
 } from "./detectors";
@@ -38,6 +39,7 @@ export class TypeDetectorService {
       nginx: nginxDetector.analyze(sampleLines),
       syslog: syslogDetector.analyze(sampleLines),
       json: jsonDetector.analyze(sampleLines),
+      keyValue: keyValueDetector.analyze(sampleLines),
       generic: genericDetector.analyze(sampleLines),
     };
 
@@ -72,6 +74,7 @@ export class TypeDetectorService {
           nginx: detectorResults.nginx.confidence,
           syslog: detectorResults.syslog.confidence,
           json: detectorResults.json.confidence,
+          keyValue: detectorResults.keyValue.confidence,
           generic: detectorResults.generic.confidence,
         },
       },

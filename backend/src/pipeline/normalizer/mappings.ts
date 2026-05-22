@@ -105,6 +105,21 @@ export const genericMapping: FieldMapping = {
 };
 
 /**
+ * Key-Value Format Mapping
+ * Uses semantic extraction with ontology patterns
+ */
+export const keyValueMapping: FieldMapping = {
+  // These are not used for KEY_VALUE as semantic extraction is used instead
+  // But defined for compatibility
+  timestamp: ["timestamp", "time", "date"],
+  sourceIp: ["ip", "source_ip"],
+  user: ["user", "username"],
+  logLevel: ["level", "severity"],
+  message: ["message", "msg"],
+  statusCode: ["status", "code"],
+};
+
+/**
  * Combined mapping registry
  * Maps detected log type to field mappings
  */
@@ -117,6 +132,7 @@ export const fieldMappingsRegistry: ParserTypeMapping = {
   JSON_LOG: jsonMapping,
   WINDOWS_EVENT: windowsEventMapping,
   WINDOWS_SECURITY: windowsEventMapping,
+  KEY_VALUE: keyValueMapping,
   GENERIC: genericMapping,
   CSV: genericMapping,
   UNKNOWN: genericMapping,
@@ -248,6 +264,15 @@ export const eventTypeMappings: Record<string, string> = {
   file_create: "FILE_CREATE",
   file_delete: "FILE_DELETE",
   file_modify: "FILE_MODIFY",
+
+  // Security events
+  suspicious_activity: "SUSPICIOUS_ACTIVITY",
+  suspicious: "SUSPICIOUS_ACTIVITY",
+  brute_force: "BRUTE_FORCE_ATTEMPT",
+  brute_force_attempt: "BRUTE_FORCE_ATTEMPT",
+  permission_denied: "PERMISSION_DENIED",
+  access_denied: "PERMISSION_DENIED",
+  unauthorized: "PERMISSION_DENIED",
 };
 
 /**
@@ -263,7 +288,16 @@ export function normalizeEventType(value: any): string {
 
   if (mapped) return mapped;
 
-  // Partial matching
+  // Partial matching for fuzzy classification (check high-priority first)
+  if (strValue.includes("brute") || strValue.includes("force"))
+    return "BRUTE_FORCE_ATTEMPT";
+  if (strValue.includes("suspicious")) return "SUSPICIOUS_ACTIVITY";
+  if (
+    strValue.includes("permission") ||
+    strValue.includes("deny") ||
+    strValue.includes("denied")
+  )
+    return "PERMISSION_DENIED";
   if (strValue.includes("login") || strValue.includes("auth"))
     return "LOGIN_ATTEMPT";
   if (strValue.includes("error") || strValue.includes("fail"))
@@ -271,4 +305,243 @@ export function normalizeEventType(value: any): string {
   if (strValue.includes("success")) return "SUCCESS_EVENT";
 
   return "GENERIC_EVENT"; // Default to generic
+}
+
+// ================================================
+// SEMANTIC ONTOLOGY MAPPING FUNCTIONS
+// ================================================
+
+/**
+ * Semantic field extraction
+ * Instead of exact string matching, use regex patterns to identify field semantics
+ * This enables matching variations like: ip, client_ip, source_ip, remote_addr, ipv4, etc.
+ */
+
+/**
+ * Semantic patterns for field matching
+ * Maps canonical field names to regex patterns that match variations
+ */
+export const semanticPatterns: Record<string, RegExp> = {
+  // IP Address variations
+  ipAddress:
+    /(^ip$|ip_address|source_ip|client_ip|remote_addr|remote_ip|ipv4|ipv6|addr|sender_ip|origin_ip)/i,
+
+  // User/Actor variations
+  user: /(^user$|username|user_id|uid|actor|account|principal|user_name|auth_user|login_user|logged_in_user)/i,
+
+  // Status/Result variations
+  status:
+    /(^status$|result|outcome|action_result|state|return_code|exit_code|code|result_code)/i,
+
+  // Event/Action variations
+  eventType:
+    /(^event$|event_type|type|action|operation|event_name|activity|event_action|message_type)/i,
+
+  // Severity/Priority variations
+  severity:
+    /(severity|severity_level|level|priority|urgency|impact|alert_level|risk_level)/i,
+
+  // Timestamp variations
+  timestamp:
+    /(^timestamp$|time|date|ts|@timestamp|datetime|created_at|occurred_at|event_time|time_created)/i,
+
+  // HTTP Status variations
+  httpStatus:
+    /(^status$|status_code|http_status|response_code|response_status|code|http_code)/i,
+
+  // Message variations
+  message:
+    /(^message$|msg|text|description|event_description|detail|details|log_message)/i,
+
+  // Request/Method variations
+  method:
+    /(^method$|http_method|request_method|verb|action|operation|http_verb)/i,
+
+  // URL/Path variations
+  url: /(^url$|uri|path|request_uri|request_path|endpoint|resource|request_url)/i,
+};
+
+/**
+ * Extract field using semantic pattern matching
+ * Searches parsed fields for semantic meaning rather than exact matches
+ *
+ * @param fields - Parsed log fields (key-value pairs)
+ * @param semanticField - The semantic field name (e.g., "ipAddress", "user")
+ * @returns - Value if matched, undefined otherwise
+ */
+export function extractSemanticField(
+  fields: Record<string, any>,
+  semanticField: keyof typeof semanticPatterns,
+): any {
+  const pattern = semanticPatterns[semanticField];
+  if (!pattern) return undefined;
+
+  for (const [key, value] of Object.entries(fields)) {
+    if (
+      pattern.test(key) &&
+      value !== undefined &&
+      value !== null &&
+      value !== ""
+    ) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Extract all unmatched fields from parsed log
+ * Returns fields that don't match any canonical semantic pattern
+ * These are preserved in JSONB metadata
+ *
+ * @param fields - Parsed log fields
+ * @returns - Object with unmapped fields
+ */
+export function extractUnmappedFields(
+  fields: Record<string, any>,
+): Record<string, any> {
+  const unmapped: Record<string, any> = {};
+  const allPatterns = Object.values(semanticPatterns);
+
+  for (const [key, value] of Object.entries(fields)) {
+    // Check if this key matches any semantic pattern
+    const isMatched = allPatterns.some((pattern) => pattern.test(key));
+
+    if (!isMatched && value !== undefined && value !== null && value !== "") {
+      unmapped[key] = value;
+    }
+  }
+
+  return unmapped;
+}
+
+/**
+ * Fuzzy-logic severity classifier
+ * Prioritizes explicit severity field, falls back to heuristic analysis
+ *
+ * @param fields - Parsed log fields
+ * @param defaultSeverity - Default severity if none found
+ * @returns - Normalized severity level
+ */
+export function classifySeverity(
+  fields: Record<string, any>,
+  defaultSeverity: string = "INFO",
+): string {
+  // 1. Check for explicit severity field FIRST (highest priority)
+  const explicitSeverity = extractSemanticField(fields, "severity");
+  if (explicitSeverity) {
+    return normalizeSeverity(explicitSeverity);
+  }
+
+  // 2. Check for brute force indicators (attempts >= 5)
+  const attempts = fields["attempts"];
+  if (attempts && parseInt(String(attempts)) >= 5) {
+    return "CRITICAL";
+  }
+
+  // 3. Check for blocked indicator
+  const blocked = fields["blocked"];
+  if (blocked && String(blocked).toLowerCase() === "true") {
+    return "CRITICAL";
+  }
+
+  // 4. Check for event type and infer severity
+  const eventType = extractSemanticField(fields, "eventType");
+  if (eventType) {
+    const eventStr = String(eventType).toLowerCase();
+    // High-impact security events
+    if (
+      eventStr.includes("brute") ||
+      eventStr.includes("suspicious") ||
+      eventStr.includes("malicious") ||
+      eventStr.includes("attack")
+    ) {
+      return "CRITICAL";
+    }
+    if (
+      eventStr.includes("fail") ||
+      eventStr.includes("error") ||
+      eventStr.includes("denied") ||
+      eventStr.includes("unauthorized")
+    ) {
+      return "HIGH";
+    }
+    if (eventStr.includes("warn")) {
+      return "MEDIUM";
+    }
+  }
+
+  // 5. Check for status code
+  const status = extractSemanticField(fields, "status");
+  if (status) {
+    return normalizeSeverity(status);
+  }
+
+  return defaultSeverity;
+}
+
+/**
+ * Fuzzy-logic event type classifier
+ * Analyzes fields and event message for semantic meaning
+ *
+ * @param fields - Parsed log fields
+ * @param rawMessage - Original raw log message
+ * @returns - Normalized event type
+ */
+export function classifyEventType(
+  fields: Record<string, any>,
+  rawMessage: string = "",
+): string {
+  // 1. Check for explicit event type field
+  const explicitType = extractSemanticField(fields, "eventType");
+  if (explicitType) {
+    return normalizeEventType(explicitType);
+  }
+
+  // 2. Analyze raw message for keywords
+  const rawLower = rawMessage.toLowerCase();
+
+  // High-priority threats
+  if (rawLower.includes("brute_force") || rawLower.includes("brute force")) {
+    return "BRUTE_FORCE_ATTEMPT";
+  }
+  if (rawLower.includes("suspicious") && rawLower.includes("activity")) {
+    return "SUSPICIOUS_ACTIVITY";
+  }
+  if (rawLower.includes("permission") && rawLower.includes("denied")) {
+    return "PERMISSION_DENIED";
+  }
+
+  // Authentication events
+  if (
+    rawLower.includes("failed_login") ||
+    (rawLower.includes("fail") && rawLower.includes("login"))
+  ) {
+    return "LOGIN_FAILED";
+  }
+  if (rawLower.includes("login") && !rawLower.includes("fail")) {
+    return "LOGIN_ATTEMPT";
+  }
+  if (rawLower.includes("logout")) {
+    return "LOGOUT";
+  }
+
+  // Error events
+  if (rawLower.includes("error")) {
+    return "ERROR_EVENT";
+  }
+
+  // Success events
+  if (rawLower.includes("success")) {
+    return "SUCCESS_EVENT";
+  }
+
+  // 3. Check method field for HTTP operations
+  const method = extractSemanticField(fields, "method");
+  if (method) {
+    return normalizeEventType(method);
+  }
+
+  return "GENERIC_EVENT";
 }
