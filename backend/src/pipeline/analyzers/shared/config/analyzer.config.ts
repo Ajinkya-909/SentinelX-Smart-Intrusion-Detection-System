@@ -166,11 +166,29 @@ export const loadAnalyzerConfig = () => {
       zScoreThreshold: parseFloat(
         process.env.ANALYZER_Z_SCORE_THRESHOLD || "3.0",
       ),
+      baselineWindowHours: 1,
+      errorRateMultiplier: parseFloat(
+        process.env.ANALYZER_ERROR_RATE_MULTIPLIER || "3.0",
+      ),
+      dataTransferStdDevMultiplier: parseFloat(
+        process.env.ANALYZER_DATA_TRANSFER_MULTIPLIER || "3.0",
+      ),
+      endpointDiversityMultiplier: parseFloat(
+        process.env.ANALYZER_ENDPOINT_DIVERSITY_MULTIPLIER || "3.0",
+      ),
+      criticalEventMultiplier: parseFloat(
+        process.env.ANALYZER_CRITICAL_EVENT_MULTIPLIER || "5.0",
+      ),
     },
+    temporal: analyzerConfig.temporal,
+    correlation: analyzerConfig.correlation,
+    maliciousPayload: analyzerConfig.maliciousPayload,
+    scannerBotPatterns: analyzerConfig.scannerBotPatterns,
     global: {
       confidenceMinimum: parseFloat(
         process.env.ANALYZER_CONFIDENCE_MIN || "0.6",
       ),
+      severityLevels: analyzerConfig.global.severityLevels,
     },
   };
 };

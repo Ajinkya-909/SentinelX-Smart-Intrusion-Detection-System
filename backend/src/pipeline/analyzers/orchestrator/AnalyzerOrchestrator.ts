@@ -9,6 +9,10 @@ import {
 } from "../shared/findings/Finding.types.js";
 import { IAnalyzer } from "../shared/interfaces/Analyzer.interface.js";
 import logger from "../../../config/logger.js";
+import { ruleAnalyzer } from "../rule/RuleAnalyzer.js";
+import { statisticalAnalyzer } from "../statistical/StatisticalAnalyzer.js";
+import { temporalAnalyzer } from "../temporal/TemporalAnalyzer.js";
+import { correlationAnalyzer } from "../correlation/CorrelationAnalyzer.js";
 
 /**
  * Analyzer Orchestrator
@@ -30,7 +34,11 @@ export class AnalyzerOrchestrator {
   private correlationAnalyzer: IAnalyzer | null = null;
 
   constructor() {
-    // Analyzers will be injected/imported later
+    // Register analyzers
+    this.ruleAnalyzer = ruleAnalyzer;
+    this.statisticalAnalyzer = statisticalAnalyzer;
+    this.temporalAnalyzer = temporalAnalyzer;
+    this.correlationAnalyzer = correlationAnalyzer;
   }
 
   /**
