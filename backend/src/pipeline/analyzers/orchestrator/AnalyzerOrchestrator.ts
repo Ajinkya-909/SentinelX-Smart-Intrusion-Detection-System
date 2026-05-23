@@ -1,18 +1,18 @@
 import {
   AnalysisContext,
   NormalizedLog,
-} from "../shared/context/AnalysisContext.js";
-import { buildAnalysisContext } from "../shared/context/buildAnalysisContext.js";
+} from "../shared/context/AnalysisContext";
+import { buildAnalysisContext } from "../shared/context/buildAnalysisContext";
 import {
   AnalyzerFinding,
   AnalyzerResult,
-} from "../shared/findings/Finding.types.js";
-import { IAnalyzer } from "../shared/interfaces/Analyzer.interface.js";
-import logger from "../../../config/logger.js";
-import { ruleAnalyzer } from "../rule/RuleAnalyzer.js";
-import { statisticalAnalyzer } from "../statistical/StatisticalAnalyzer.js";
-import { temporalAnalyzer } from "../temporal/TemporalAnalyzer.js";
-import { correlationAnalyzer } from "../correlation/CorrelationAnalyzer.js";
+} from "../shared/findings/Finding.types";
+import { IAnalyzer } from "../shared/interfaces/Analyzer.interface";
+import logger from "../../../config/logger";
+import { ruleAnalyzer } from "../rule/RuleAnalyzer";
+import { statisticalAnalyzer } from "../statistical/StatisticalAnalyzer";
+import { temporalAnalyzer } from "../temporal/TemporalAnalyzer";
+import { correlationAnalyzer } from "../correlation/CorrelationAnalyzer";
 
 /**
  * Analyzer Orchestrator

@@ -1,11 +1,11 @@
-import { IDetector } from "../../shared/interfaces/Detector.interface.js";
-import { AnalyzerFinding } from "../../shared/findings/Finding.types.js";
-import { AnalysisContext } from "../../shared/context/AnalysisContext.js";
-import { FindingSeverity } from "../../shared/findings/FindingSeverity.js";
-import { createFinding } from "../../shared/findings/createFinding.js";
-import { timeline } from "../../shared/utils/timeline.util.js";
-import { grouping } from "../../shared/utils/grouping.util.js";
-import { loadAnalyzerConfig } from "../../shared/config/analyzer.config.js";
+import { IDetector } from "../../shared/interfaces/Detector.interface";
+import { AnalyzerFinding } from "../../shared/findings/Finding.types";
+import { AnalysisContext } from "../../shared/context/AnalysisContext";
+import { FindingSeverity } from "../../shared/findings/FindingSeverity";
+import { createFinding } from "../../shared/findings/createFinding";
+import { timeline } from "../../shared/utils/timeline.util";
+import { grouping } from "../../shared/utils/grouping.util";
+import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
 
 /**
  * DETECTOR 3: Account Takeover Indicator
@@ -93,3 +93,4 @@ export const accountTakeoverDetector: IDetector = {
     return findings;
   },
 };
+

@@ -1,15 +1,15 @@
-import { IAnalyzer } from "../shared/interfaces/Analyzer.interface.js";
-import { AnalyzerFinding } from "../shared/findings/Finding.types.js";
-import { AnalysisContext } from "../shared/context/AnalysisContext.js";
-import logger from "../../../config/logger.js";
+import { IAnalyzer } from "../shared/interfaces/Analyzer.interface";
+import { AnalyzerFinding } from "../shared/findings/Finding.types";
+import { AnalysisContext } from "../shared/context/AnalysisContext";
+import logger from "../../../config/logger";
 
 // Import all 6 detectors
-import { rapidBurstDetector } from "./detectors/rapidBurst.detector.js";
-import { reconnaissanceBurstDetector } from "./detectors/reconnaissanceBurst.detector.js";
-import { offHoursAdminDetector } from "./detectors/offHoursAdmin.detector.js";
-import { midnightAccessDetector } from "./detectors/midnightAccess.detector.js";
-import { longSessionDetector } from "./detectors/longSession.detector.js";
-import { abnormalIntervalsDetector } from "./detectors/abnormalIntervals.detector.js";
+import { rapidBurstDetector } from "./detectors/rapidBurst.detector";
+import { reconnaissanceBurstDetector } from "./detectors/reconnaissanceBurst.detector";
+import { offHoursAdminDetector } from "./detectors/offHoursAdmin.detector";
+import { midnightAccessDetector } from "./detectors/midnightAccess.detector";
+import { longSessionDetector } from "./detectors/longSession.detector";
+import { abnormalIntervalsDetector } from "./detectors/abnormalIntervals.detector";
 
 /**
  * TEMPORAL ANALYZER
@@ -96,3 +96,4 @@ export class TemporalAnalyzer implements IAnalyzer {
 
 // Export singleton instance
 export const temporalAnalyzer = new TemporalAnalyzer();
+

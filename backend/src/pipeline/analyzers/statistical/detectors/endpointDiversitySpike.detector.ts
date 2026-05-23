@@ -1,9 +1,9 @@
-import { IDetector } from "../../shared/interfaces/Detector.interface.js";
-import { AnalyzerFinding } from "../../shared/findings/Finding.types.js";
-import { AnalysisContext } from "../../shared/context/AnalysisContext.js";
-import { FindingSeverity } from "../../shared/findings/FindingSeverity.js";
-import { createFinding } from "../../shared/findings/createFinding.js";
-import { correlation } from "../../shared/utils/correlation.util.js";
+import { IDetector } from "../../shared/interfaces/Detector.interface";
+import { AnalyzerFinding } from "../../shared/findings/Finding.types";
+import { AnalysisContext } from "../../shared/context/AnalysisContext";
+import { FindingSeverity } from "../../shared/findings/FindingSeverity";
+import { createFinding } from "../../shared/findings/createFinding";
+import { correlation } from "../../shared/utils/correlation.util";
 
 /**
  * DETECTOR 4: Endpoint Diversity Spike
@@ -88,3 +88,4 @@ export const endpointDiversitySpikeDetector: IDetector = {
     return findings;
   },
 };
+

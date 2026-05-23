@@ -113,10 +113,7 @@ export const executeOrchestrator = async (
         `[ORCHESTRATOR] 🔍 STAGE 4/5: ANALYZING batch #${batchCount}...`,
       );
       const startAnalyzeTime = Date.now();
-      const findings = await analyzerService.analyze(
-        jobId,
-        normalizationResult.normalizedLogs,
-      );
+      const findings = await analyzerService.analyze(jobId);
       const analyzeTime = Date.now() - startAnalyzeTime;
       console.log(
         `[ORCHESTRATOR]   ✓ Analyze: ${findings?.length || 0} findings detected (${analyzeTime}ms)`,

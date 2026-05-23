@@ -1,9 +1,9 @@
-import { IDetector } from "../../shared/interfaces/Detector.interface.js";
-import { AnalyzerFinding } from "../../shared/findings/Finding.types.js";
-import { AnalysisContext } from "../../shared/context/AnalysisContext.js";
-import { FindingSeverity } from "../../shared/findings/FindingSeverity.js";
-import { createFinding } from "../../shared/findings/createFinding.js";
-import { loadAnalyzerConfig } from "../../shared/config/analyzer.config.js";
+import { IDetector } from "../../shared/interfaces/Detector.interface";
+import { AnalyzerFinding } from "../../shared/findings/Finding.types";
+import { AnalysisContext } from "../../shared/context/AnalysisContext";
+import { FindingSeverity } from "../../shared/findings/FindingSeverity";
+import { createFinding } from "../../shared/findings/createFinding";
+import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
 
 /**
  * DETECTOR 10: Dangerous File Upload
@@ -82,3 +82,4 @@ export const maliciousUploadDetector: IDetector = {
     return findings;
   },
 };
+

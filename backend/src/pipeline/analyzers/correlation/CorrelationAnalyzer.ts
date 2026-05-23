@@ -1,14 +1,14 @@
-import { IAnalyzer } from "../shared/interfaces/Analyzer.interface.js";
-import { AnalyzerFinding } from "../shared/findings/Finding.types.js";
-import { AnalysisContext } from "../shared/context/AnalysisContext.js";
-import logger from "../../../config/logger.js";
+import { IAnalyzer } from "../shared/interfaces/Analyzer.interface";
+import { AnalyzerFinding } from "../shared/findings/Finding.types";
+import { AnalysisContext } from "../shared/context/AnalysisContext";
+import logger from "../../../config/logger";
 
 // Import all 5 detectors
-import { reconExploitationChainDetector } from "./detectors/reconExploitationChain.detector.js";
-import { dataExfiltrationChainDetector } from "./detectors/dataExfiltrationChain.detector.js";
-import { lateralMovementDetector } from "./detectors/lateralMovement.detector.js";
-import { privilegeEscalationChainDetector } from "./detectors/privilegeEscalationChain.detector.js";
-import { sessionHijackingDetector } from "./detectors/sessionHijacking.detector.js";
+import { reconExploitationChainDetector } from "./detectors/reconExploitationChain.detector";
+import { dataExfiltrationChainDetector } from "./detectors/dataExfiltrationChain.detector";
+import { lateralMovementDetector } from "./detectors/lateralMovement.detector";
+import { privilegeEscalationChainDetector } from "./detectors/privilegeEscalationChain.detector";
+import { sessionHijackingDetector } from "./detectors/sessionHijacking.detector";
 
 /**
  * CORRELATION ANALYZER
@@ -101,3 +101,4 @@ export class CorrelationAnalyzer implements IAnalyzer {
 
 // Export singleton instance
 export const correlationAnalyzer = new CorrelationAnalyzer();
+

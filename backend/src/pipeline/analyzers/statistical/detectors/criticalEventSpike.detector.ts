@@ -1,9 +1,9 @@
-import { IDetector } from "../../shared/interfaces/Detector.interface.js";
-import { AnalyzerFinding } from "../../shared/findings/Finding.types.js";
-import { AnalysisContext } from "../../shared/context/AnalysisContext.js";
-import { FindingSeverity } from "../../shared/findings/FindingSeverity.js";
-import { createFinding } from "../../shared/findings/createFinding.js";
-import { statistics } from "../../shared/utils/statistics.util.js";
+import { IDetector } from "../../shared/interfaces/Detector.interface";
+import { AnalyzerFinding } from "../../shared/findings/Finding.types";
+import { AnalysisContext } from "../../shared/context/AnalysisContext";
+import { FindingSeverity } from "../../shared/findings/FindingSeverity";
+import { createFinding } from "../../shared/findings/createFinding";
+import { statistics } from "../../shared/utils/statistics.util";
 
 /**
  * DETECTOR 5: Critical Event Spike
@@ -95,3 +95,4 @@ export const criticalEventSpikeDetector: IDetector = {
     return findings;
   },
 };
+

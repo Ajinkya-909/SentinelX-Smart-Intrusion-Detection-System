@@ -7,5 +7,5 @@
  */
 
 export { userRepository } from "./user.repository";
-export { default as jobRepository } from "./job.repository";
+export { jobRepository } from "./job.repository";
 export { default as pipelineRepository } from "./pipeline.repository";

@@ -1,11 +1,11 @@
-import { IDetector } from "../../shared/interfaces/Detector.interface.js";
-import { AnalyzerFinding } from "../../shared/findings/Finding.types.js";
-import { AnalysisContext } from "../../shared/context/AnalysisContext.js";
-import { FindingSeverity } from "../../shared/findings/FindingSeverity.js";
-import { createFinding } from "../../shared/findings/createFinding.js";
-import { grouping } from "../../shared/utils/grouping.util.js";
-import { slidingWindow } from "../../shared/utils/slidingWindow.util.js";
-import { loadAnalyzerConfig } from "../../shared/config/analyzer.config.js";
+import { IDetector } from "../../shared/interfaces/Detector.interface";
+import { AnalyzerFinding } from "../../shared/findings/Finding.types";
+import { AnalysisContext } from "../../shared/context/AnalysisContext";
+import { FindingSeverity } from "../../shared/findings/FindingSeverity";
+import { createFinding } from "../../shared/findings/createFinding";
+import { grouping } from "../../shared/utils/grouping.util";
+import { slidingWindow } from "../../shared/utils/slidingWindow.util";
+import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
 
 /**
  * DETECTOR 1: Brute Force Authentication Attack
@@ -135,3 +135,4 @@ export const bruteForceDetector: IDetector = {
     return findings;
   },
 };
+

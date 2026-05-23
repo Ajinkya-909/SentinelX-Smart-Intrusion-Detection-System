@@ -581,7 +581,6 @@ export const normalizerService = {
 
       return {
         success: true,
-        normalizedLogs,
         failedCount: failCount,
         stats: {
           totalProcessed: parsedLogs.length,

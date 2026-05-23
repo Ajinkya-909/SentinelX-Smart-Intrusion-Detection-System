@@ -1,19 +1,19 @@
-import { IAnalyzer } from "../shared/interfaces/Analyzer.interface.js";
-import { AnalyzerFinding } from "../shared/findings/Finding.types.js";
-import { AnalysisContext } from "../shared/context/AnalysisContext.js";
-import logger from "../../../config/logger.js";
+import { IAnalyzer } from "../shared/interfaces/Analyzer.interface";
+import { AnalyzerFinding } from "../shared/findings/Finding.types";
+import { AnalysisContext } from "../shared/context/AnalysisContext";
+import logger from "../../../config/logger";
 
 // Import all 10 detectors
-import { bruteForceDetector } from "./detectors/bruteForce.detector.js";
-import { rapidAuthVelocityDetector } from "./detectors/rapidAuthVelocity.detector.js";
-import { accountTakeoverDetector } from "./detectors/accountTakeover.detector.js";
-import { impossibleVelocityDetector } from "./detectors/impossibleVelocity.detector.js";
-import { privilegeEscalationDetector } from "./detectors/privilegeEscalation.detector.js";
-import { sqlInjectionDetector } from "./detectors/sqlInjection.detector.js";
-import { xssDetector } from "./detectors/xss.detector.js";
-import { pathTraversalDetector } from "./detectors/pathTraversal.detector.js";
-import { scannerBotDetector } from "./detectors/scannerBot.detector.js";
-import { maliciousUploadDetector } from "./detectors/maliciousUpload.detector.js";
+import { bruteForceDetector } from "./detectors/bruteForce.detector";
+import { rapidAuthVelocityDetector } from "./detectors/rapidAuthVelocity.detector";
+import { accountTakeoverDetector } from "./detectors/accountTakeover.detector";
+import { impossibleVelocityDetector } from "./detectors/impossibleVelocity.detector";
+import { privilegeEscalationDetector } from "./detectors/privilegeEscalation.detector";
+import { sqlInjectionDetector } from "./detectors/sqlInjection.detector";
+import { xssDetector } from "./detectors/xss.detector";
+import { pathTraversalDetector } from "./detectors/pathTraversal.detector";
+import { scannerBotDetector } from "./detectors/scannerBot.detector";
+import { maliciousUploadDetector } from "./detectors/maliciousUpload.detector";
 
 /**
  * RULE ANALYZER

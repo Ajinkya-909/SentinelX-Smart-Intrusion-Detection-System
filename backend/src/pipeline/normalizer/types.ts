@@ -142,7 +142,6 @@ export interface NormalizedLog {
  */
 export interface NormalizationResult {
   success: boolean;
-  normalizedLogs: NormalizedLog[];
   failedCount: number;
   stats: {
     totalProcessed: number;

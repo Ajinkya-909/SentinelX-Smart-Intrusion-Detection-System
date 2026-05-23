@@ -1,14 +1,14 @@
-import { IAnalyzer } from "../shared/interfaces/Analyzer.interface.js";
-import { AnalyzerFinding } from "../shared/findings/Finding.types.js";
-import { AnalysisContext } from "../shared/context/AnalysisContext.js";
-import logger from "../../../config/logger.js";
+import { IAnalyzer } from "../shared/interfaces/Analyzer.interface";
+import { AnalyzerFinding } from "../shared/findings/Finding.types";
+import { AnalysisContext } from "../shared/context/AnalysisContext";
+import logger from "../../../config/logger";
 
 // Import all 5 detectors
-import { requestSpikeDetector } from "./detectors/requestSpike.detector.js";
-import { errorRateSpikeDetector } from "./detectors/errorRateSpike.detector.js";
-import { dataTransferSpikeDetector } from "./detectors/dataTransferSpike.detector.js";
-import { endpointDiversitySpikeDetector } from "./detectors/endpointDiversitySpike.detector.js";
-import { criticalEventSpikeDetector } from "./detectors/criticalEventSpike.detector.js";
+import { requestSpikeDetector } from "./detectors/requestSpike.detector";
+import { errorRateSpikeDetector } from "./detectors/errorRateSpike.detector";
+import { dataTransferSpikeDetector } from "./detectors/dataTransferSpike.detector";
+import { endpointDiversitySpikeDetector } from "./detectors/endpointDiversitySpike.detector";
+import { criticalEventSpikeDetector } from "./detectors/criticalEventSpike.detector";
 
 /**
  * STATISTICAL ANALYZER
@@ -97,3 +97,4 @@ export class StatisticalAnalyzer implements IAnalyzer {
 
 // Export singleton instance
 export const statisticalAnalyzer = new StatisticalAnalyzer();
+
