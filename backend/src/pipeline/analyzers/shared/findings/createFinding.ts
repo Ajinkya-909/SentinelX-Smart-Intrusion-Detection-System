@@ -3,7 +3,7 @@ import { FindingSeverity } from "./FindingSeverity";
 
 export interface CreateFindingParams {
   jobId: string;
-  analyzer: "rule" | "statistical" | "temporal" | "correlation";
+  analyzer: "rule" | "statistical" | "temporal" | "correlation" | "ml";
   finding_type: FindingType;
   severity: FindingSeverity;
   confidence: number;

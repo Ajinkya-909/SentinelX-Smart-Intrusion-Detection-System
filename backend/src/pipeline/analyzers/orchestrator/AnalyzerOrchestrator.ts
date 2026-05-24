@@ -13,10 +13,11 @@ import { ruleAnalyzer } from "../rule/RuleAnalyzer";
 import { statisticalAnalyzer } from "../statistical/StatisticalAnalyzer";
 import { temporalAnalyzer } from "../temporal/TemporalAnalyzer";
 import { correlationAnalyzer } from "../correlation/CorrelationAnalyzer";
+import { mlAnalyzer } from "../ml/MLAnalyzer";
 
 /**
  * Analyzer Orchestrator
- * Coordinates all 4 analyzers and collects findings
+ * Coordinates all 5 analyzers and collects findings
  *
  * Responsibilities:
  * - Load normalized logs
@@ -32,6 +33,7 @@ export class AnalyzerOrchestrator {
   private statisticalAnalyzer: IAnalyzer | null = null;
   private temporalAnalyzer: IAnalyzer | null = null;
   private correlationAnalyzer: IAnalyzer | null = null;
+  private mlAnalyzer: IAnalyzer | null = null;
 
   constructor() {
     // Register analyzers
@@ -39,13 +41,14 @@ export class AnalyzerOrchestrator {
     this.statisticalAnalyzer = statisticalAnalyzer;
     this.temporalAnalyzer = temporalAnalyzer;
     this.correlationAnalyzer = correlationAnalyzer;
+    this.mlAnalyzer = mlAnalyzer;
   }
 
   /**
    * Register analyzers (dependency injection)
    */
   registerAnalyzer(
-    name: "rule" | "statistical" | "temporal" | "correlation",
+    name: "rule" | "statistical" | "temporal" | "correlation" | "ml",
     analyzer: IAnalyzer,
   ) {
     switch (name) {
@@ -60,6 +63,9 @@ export class AnalyzerOrchestrator {
         break;
       case "correlation":
         this.correlationAnalyzer = analyzer;
+        break;
+      case "ml":
+        this.mlAnalyzer = analyzer;
         break;
     }
   }
@@ -89,7 +95,7 @@ export class AnalyzerOrchestrator {
 
       // ===== STEP 2: EXECUTE ANALYZERS IN PARALLEL =====
       logger.info(
-        `[ANALYZER ORCHESTRATOR] Executing 4 analyzers in parallel...`,
+        `[ANALYZER ORCHESTRATOR] Executing 5 analyzers in parallel...`,
       );
 
       const analyzerPromises: Promise<AnalyzerResult>[] = [];
@@ -127,6 +133,12 @@ export class AnalyzerOrchestrator {
             this.correlationAnalyzer,
             analysisContext,
           ),
+        );
+      }
+
+      if (this.mlAnalyzer) {
+        analyzerPromises.push(
+          this.executeAnalyzer("ml", this.mlAnalyzer, analysisContext),
         );
       }
 
@@ -168,7 +180,7 @@ export class AnalyzerOrchestrator {
    * Execute single analyzer with error handling
    */
   private async executeAnalyzer(
-    name: "rule" | "statistical" | "temporal" | "correlation",
+    name: "rule" | "statistical" | "temporal" | "correlation" | "ml",
     analyzer: IAnalyzer,
     context: AnalysisContext,
   ): Promise<AnalyzerResult> {

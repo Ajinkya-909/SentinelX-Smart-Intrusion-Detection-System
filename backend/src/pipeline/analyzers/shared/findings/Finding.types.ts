@@ -26,12 +26,15 @@ export type FindingType =
   | "DATA_EXFILTRATION_CHAIN"
   | "LATERAL_MOVEMENT"
   | "PRIVILEGE_ESCALATION_CHAIN"
-  | "SESSION_HIJACKING";
+  | "SESSION_HIJACKING"
+  | "ANOMALOUS_BEHAVIOR"
+  | "BEHAVIORAL_OUTLIER"
+  | "PATTERN_DEVIATION";
 
 export interface AnalyzerFinding {
   id?: string;
   jobId: string;
-  analyzer: "rule" | "statistical" | "temporal" | "correlation";
+  analyzer: "rule" | "statistical" | "temporal" | "correlation" | "ml";
   finding_type: FindingType;
   severity: FindingSeverity;
   confidence: number; // 0.0 - 1.0
@@ -63,7 +66,7 @@ export interface AnalyzerFinding {
 }
 
 export interface AnalyzerResult {
-  analyzer: "rule" | "statistical" | "temporal" | "correlation";
+  analyzer: "rule" | "statistical" | "temporal" | "correlation" | "ml";
   findings: AnalyzerFinding[];
   executionTime: number; // ms
   status: "success" | "error";
