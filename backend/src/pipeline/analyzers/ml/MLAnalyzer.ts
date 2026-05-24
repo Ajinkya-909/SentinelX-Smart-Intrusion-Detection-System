@@ -16,6 +16,7 @@
 
 import { IAnalyzer } from "../shared/interfaces/Analyzer.interface";
 import { AnalyzerFinding } from "../shared/findings/Finding.types";
+import { FindingSeverity } from "../shared/findings/FindingSeverity";
 import { AnalysisContext } from "../shared/context/AnalysisContext";
 import { createFinding } from "../shared/findings/createFinding";
 import { mlClient } from "./MLClient";
@@ -131,7 +132,13 @@ export class MLAnalyzer implements IAnalyzer {
     }
 
     // Map risk to severity
-    const severity = result.risk;
+    const riskToSeverityMap: Record<string, FindingSeverity> = {
+      CRITICAL: FindingSeverity.CRITICAL,
+      HIGH: FindingSeverity.HIGH,
+      MEDIUM: FindingSeverity.MEDIUM,
+      LOW: FindingSeverity.LOW,
+    };
+    const severity = riskToSeverityMap[result.risk] || FindingSeverity.LOW;
     const confidence = Math.min(result.anomalyScore * 1.25, 1.0); // Slight boost for ML findings
 
     // Extract entity information
@@ -239,7 +246,7 @@ function parseEntity(entityString: string): {
   entityValue: string;
 } {
   const parts = entityString.split(":");
-  if (parts.length === 2) {
+  if (parts.length === 2 && parts[0] && parts[1]) {
     return { entityType: parts[0], entityValue: parts[1] };
   }
   return { entityType: "unknown", entityValue: entityString };

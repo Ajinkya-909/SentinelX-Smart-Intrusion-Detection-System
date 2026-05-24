@@ -6,7 +6,10 @@
  * and temporal characteristics that ML algorithms can analyze for anomalies.
  */
 
-import { AnalysisContext } from "../../shared/context/AnalysisContext";
+import {
+  AnalysisContext,
+  NormalizedLog,
+} from "../../shared/context/AnalysisContext";
 import { IpFeatureVector } from "../types/features.types";
 import logger from "../../../../config/logger";
 
@@ -102,25 +105,27 @@ export function buildIpFeatures(ctx: AnalysisContext): IpFeatureVector[] {
  */
 function extractIpFeatures(
   ip: string,
-  ipLogs: typeof AnalysisContext.prototype.logs,
+  ipLogs: NormalizedLog[],
   ctx: AnalysisContext,
 ): IpFeatureVector {
   // ===== BASIC COUNTS =====
   const requestCount = ipLogs.length;
-  const errorLogs = ipLogs.filter((log) => log.status_code >= 400);
+  const errorLogs = ipLogs.filter(
+    (log: NormalizedLog) => log.status_code >= 400,
+  );
   const errorCount = errorLogs.length;
   const errorRate = requestCount > 0 ? errorCount / requestCount : 0;
 
   // ===== AUTHENTICATION BEHAVIOR =====
-  const authLogs = ipLogs.filter((log) =>
+  const authLogs = ipLogs.filter((log: NormalizedLog) =>
     log.event_type?.toUpperCase().includes("AUTH"),
   );
   const failedAuthLogs = ipLogs.filter(
-    (log) =>
+    (log: NormalizedLog) =>
       log.event_type?.toUpperCase().includes("AUTH") && log.status_code >= 400,
   );
   const successfulAuthLogs = ipLogs.filter(
-    (log) =>
+    (log: NormalizedLog) =>
       log.event_type?.toUpperCase().includes("AUTH") && log.status_code < 400,
   );
 
@@ -131,8 +136,8 @@ function extractIpFeatures(
 
   // ===== REQUEST TIMING PATTERNS =====
   const timestamps = ipLogs
-    .map((log) => new Date(log.timestamp).getTime())
-    .sort((a, b) => a - b);
+    .map((log: NormalizedLog) => new Date(log.timestamp).getTime())
+    .sort((a: number, b: number) => a - b);
 
   let avgRequestIntervalSeconds = 0;
   let maxRequestIntervalSeconds = 0;
@@ -142,7 +147,7 @@ function extractIpFeatures(
   if (timestamps.length > 1) {
     const intervals: number[] = [];
     for (let i = 1; i < timestamps.length; i++) {
-      const interval = (timestamps[i] - timestamps[i - 1]) / 1000; // seconds
+      const interval = (timestamps[i]! - timestamps[i - 1]!) / 1000; // seconds
       intervals.push(interval);
       maxRequestIntervalSeconds = Math.max(maxRequestIntervalSeconds, interval);
       minRequestIntervalSeconds = Math.min(minRequestIntervalSeconds, interval);
@@ -190,9 +195,11 @@ function extractIpFeatures(
 
   // ===== HTTP STATUS ANALYSIS =====
   const http4xxCount = ipLogs.filter(
-    (log) => log.status_code >= 400 && log.status_code < 500,
+    (log: NormalizedLog) => log.status_code >= 400 && log.status_code < 500,
   ).length;
-  const http5xxCount = ipLogs.filter((log) => log.status_code >= 500).length;
+  const http5xxCount = ipLogs.filter(
+    (log: NormalizedLog) => log.status_code >= 500,
+  ).length;
 
   // ===== ERROR TYPES =====
   const errorTypeSet = new Set<string>();
@@ -216,25 +223,26 @@ function extractIpFeatures(
 
   // ===== RESPONSE SIZE PATTERNS =====
   const responseSizes = ipLogs
-    .map((log) => log.response_size_bytes || 0)
-    .filter((size) => size > 0);
+    .map((log: NormalizedLog) => log.response_size_bytes || 0)
+    .filter((size: number) => size > 0);
 
   const avgResponseSizeBytes =
     responseSizes.length > 0
-      ? responseSizes.reduce((a, b) => a + b, 0) / responseSizes.length
+      ? responseSizes.reduce((a: number, b: number) => a + b, 0) /
+        responseSizes.length
       : 0;
 
   const maxResponseSizeBytes =
     responseSizes.length > 0 ? Math.max(...responseSizes) : 0;
 
   const largeResponseCount = responseSizes.filter(
-    (size) => size > 1024 * 1024,
+    (size: number) => size > 1024 * 1024,
   ).length; // > 1MB
 
   // ===== PAYLOAD ANOMALIES =====
   // For now, count suspicious patterns in messages
   const payloadAnomalies = ipLogs.filter(
-    (log) =>
+    (log: NormalizedLog) =>
       log.message &&
       (log.message.includes("payload") ||
         log.message.includes("injection") ||

@@ -54,7 +54,7 @@ function extractSessionFeatures(
   // ===== SESSION BASICS =====
   const sessionId = session.sessionId;
   const username = session.userId;
-  const ipAddress = Array.from(session.ipAddresses)[0] || "unknown"; // Get first IP
+  const ipAddress = (Array.from(session.ipAddresses)[0] ?? "unknown") as string;
 
   const startTime = new Date(session.startTime);
   const endTime = new Date(session.endTime);
@@ -77,10 +77,10 @@ function extractSessionFeatures(
   if (timestamps.length > 1) {
     // Find max requests in any 1-minute window
     for (let i = 0; i < timestamps.length; i++) {
-      const windowStart = timestamps[i];
+      const windowStart = timestamps[i]!;
       const windowEnd = windowStart + 60000; // 1 minute
       const requestsInWindow = timestamps.filter(
-        (t) => t >= windowStart && t < windowEnd,
+        (t: number) => t >= windowStart && t < windowEnd,
       ).length;
       maxRequestsInOneMinute = Math.max(
         maxRequestsInOneMinute,
@@ -91,7 +91,7 @@ function extractSessionFeatures(
     // Calculate average time between requests
     const intervals: number[] = [];
     for (let i = 1; i < timestamps.length; i++) {
-      const interval = (timestamps[i] - timestamps[i - 1]) / 1000; // seconds
+      const interval = (timestamps[i]! - timestamps[i - 1]!) / 1000; // seconds
       intervals.push(interval);
     }
 

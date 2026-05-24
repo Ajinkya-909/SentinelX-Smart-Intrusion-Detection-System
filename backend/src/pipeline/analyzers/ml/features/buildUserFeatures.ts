@@ -6,7 +6,10 @@
  * and session characteristics.
  */
 
-import { AnalysisContext } from "../../shared/context/AnalysisContext";
+import {
+  AnalysisContext,
+  NormalizedLog,
+} from "../../shared/context/AnalysisContext";
 import { UserFeatureVector } from "../types/features.types";
 import logger from "../../../../config/logger";
 
@@ -21,7 +24,7 @@ export function buildUserFeatures(ctx: AnalysisContext): UserFeatureVector[] {
 
   try {
     // Group logs by username
-    const userMap = new Map<string, typeof ctx.logs>();
+    const userMap = new Map<string, NormalizedLog[]>();
 
     for (const log of ctx.logs) {
       // Extract username from metadata or event_type
@@ -74,22 +77,26 @@ function extractUsername(log: any): string | null {
  */
 function extractUserFeatures(
   username: string,
-  userLogs: typeof AnalysisContext.prototype.logs,
+  userLogs: NormalizedLog[],
   ctx: AnalysisContext,
 ): UserFeatureVector {
   // ===== BASIC COUNTS =====
   const totalRequests = userLogs.length;
-  const errorCount = userLogs.filter((log) => log.status_code >= 400).length;
+  const errorCount = userLogs.filter(
+    (log: NormalizedLog) => log.status_code >= 400,
+  ).length;
   const userErrorRate = totalRequests > 0 ? errorCount / totalRequests : 0;
   const httpErrorCount = errorCount;
 
   // ===== LOGIN BEHAVIOR =====
-  const authLogs = userLogs.filter((log) =>
+  const authLogs = userLogs.filter((log: NormalizedLog) =>
     log.event_type?.toUpperCase().includes("AUTH"),
   );
-  const failedLogins = authLogs.filter((log) => log.status_code >= 400).length;
+  const failedLogins = authLogs.filter(
+    (log: NormalizedLog) => log.status_code >= 400,
+  ).length;
   const successfulLogins = authLogs.filter(
-    (log) => log.status_code < 400,
+    (log: NormalizedLog) => log.status_code < 400,
   ).length;
   const loginAttempts = authLogs.length;
   const loginFailureRatio =
@@ -122,21 +129,21 @@ function extractUserFeatures(
 
   // ===== PRIVILEGE & ADMIN ACCESS =====
   const adminAccessAttempts = userLogs.filter(
-    (log) =>
+    (log: NormalizedLog) =>
       log.endpoint?.includes("/admin") ||
       log.endpoint?.includes("/config") ||
       log.message?.includes("admin"),
   ).length;
 
   const privilegeEscalationAttempts = userLogs.filter(
-    (log) =>
+    (log: NormalizedLog) =>
       log.message?.includes("privilege") ||
       log.message?.includes("sudo") ||
       log.message?.includes("escalat"),
   ).length;
 
   const criticalResourceAccesses = userLogs.filter(
-    (log) =>
+    (log: NormalizedLog) =>
       log.severity === "CRITICAL" ||
       log.status_code >= 500 ||
       log.event_type?.includes("CRITICAL"),
@@ -144,7 +151,9 @@ function extractUserFeatures(
 
   // ===== ERROR PATTERNS =====
   const errorTypeSet = new Set<string>();
-  for (const log of userLogs.filter((l) => l.status_code >= 400)) {
+  for (const log of userLogs.filter(
+    (l: NormalizedLog) => l.status_code >= 400,
+  )) {
     if (log.event_type) {
       errorTypeSet.add(log.event_type);
     }
@@ -153,16 +162,16 @@ function extractUserFeatures(
 
   // ===== TEMPORAL PATTERNS =====
   const timestamps = userLogs
-    .map((log) => new Date(log.timestamp).getTime())
-    .sort((a, b) => a - b);
+    .map((log: NormalizedLog) => new Date(log.timestamp).getTime())
+    .sort((a: number, b: number) => a - b);
 
   const firstActivityTime =
     timestamps.length > 0
-      ? new Date(timestamps[0]).toISOString()
+      ? new Date(timestamps[0]!).toISOString()
       : new Date().toISOString();
   const lastActivityTime =
     timestamps.length > 0
-      ? new Date(timestamps[timestamps.length - 1]).toISOString()
+      ? new Date(timestamps[timestamps.length - 1]!).toISOString()
       : new Date().toISOString();
 
   // Hours active
@@ -174,13 +183,13 @@ function extractUserFeatures(
   const hoursActive = hourSet.size;
 
   // Night time access (22:00-06:00)
-  const nightTimeAccessCount = userLogs.filter((log) => {
+  const nightTimeAccessCount = userLogs.filter((log: NormalizedLog) => {
     const hour = new Date(log.timestamp).getHours();
     return hour >= 22 || hour < 6;
   }).length;
 
   // Weekend activity
-  const weekendCount = userLogs.filter((log) => {
+  const weekendCount = userLogs.filter((log: NormalizedLog) => {
     const day = new Date(log.timestamp).getDay();
     return day === 0 || day === 6; // Sunday or Saturday
   }).length;
@@ -189,21 +198,27 @@ function extractUserFeatures(
 
   // ===== DATA TRANSFER PATTERNS =====
   const responseSizes = userLogs
-    .map((log) => log.response_size_bytes || 0)
-    .filter((size) => size > 0);
-  const totalDataTransferred = responseSizes.reduce((a, b) => a + b, 0);
+    .map((log: NormalizedLog) => log.response_size_bytes || 0)
+    .filter((size: number) => size > 0);
+  const totalDataTransferred = responseSizes.reduce(
+    (a: number, b: number) => a + b,
+    0,
+  );
   const avgDataPerRequest =
     totalRequests > 0 ? totalDataTransferred / totalRequests : 0;
 
   const largeDataTransferCount = responseSizes.filter(
-    (size) => size > 100 * 1024 * 1024,
+    (size: number) => size > 100 * 1024 * 1024,
   ).length; // > 100MB
 
   // Download vs upload ratio (approximate from request/response sizes)
   const requestSizes = userLogs
-    .map((log) => log.request_size_bytes || 0)
-    .filter((size) => size > 0);
-  const totalRequestSize = requestSizes.reduce((a, b) => a + b, 0);
+    .map((log: NormalizedLog) => log.request_size_bytes || 0)
+    .filter((size: number) => size > 0);
+  const totalRequestSize = requestSizes.reduce(
+    (a: number, b: number) => a + b,
+    0,
+  );
   const downloadToUploadRatio =
     totalRequestSize > 0 ? totalDataTransferred / totalRequestSize : 1;
 
@@ -338,8 +353,8 @@ function calculateConcurrentSessions(
 
       // Check if session j overlaps with session i
       const overlap =
-        sessions[j].startTime < sessions[i].endTime &&
-        sessions[j].endTime > sessions[i].startTime;
+        sessions[j]!.startTime < sessions[i]!.endTime &&
+        sessions[j]!.endTime > sessions[i]!.startTime;
 
       if (overlap) {
         concurrent++;

@@ -5,7 +5,6 @@
  * Responsible for sending feature vectors and receiving ML analysis results.
  */
 
-import axios, { AxiosInstance } from "axios";
 import { mlConfig } from "./config/ml.config";
 import {
   MLAnalysisRequest,
@@ -15,7 +14,6 @@ import {
 import logger from "../../../config/logger";
 
 export class MLClient {
-  private client: AxiosInstance;
   private baseUrl: string;
   private timeout: number;
   private retries: number;
@@ -24,15 +22,6 @@ export class MLClient {
     this.baseUrl = mlConfig.fastapi.baseUrl;
     this.timeout = mlConfig.fastapi.timeout;
     this.retries = mlConfig.fastapi.retries;
-
-    // Initialize Axios client
-    this.client = axios.create({
-      baseURL: this.baseUrl,
-      timeout: this.timeout,
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
 
     logger.info(
       `[ML CLIENT] Initialized with baseUrl: ${this.baseUrl}, timeout: ${this.timeout}ms`,
@@ -44,7 +33,19 @@ export class MLClient {
    */
   async healthCheck(): Promise<boolean> {
     try {
-      const response = await this.client.get(mlConfig.fastapi.endpoints.health);
+      const url = `${this.baseUrl}${mlConfig.fastapi.endpoints.health}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
       const isHealthy = response.status === 200;
 
       if (isHealthy) {
@@ -112,23 +113,34 @@ export class MLClient {
         );
 
         const startTime = Date.now();
-        const response = await this.client.post<MLAnalysisResponse>(
-          endpoint,
-          payload,
-        );
-        const executionTime = Date.now() - startTime;
+        const url = `${this.baseUrl}${endpoint}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
-        if (response.status === 200 && response.data.status === "success") {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        const executionTime = Date.now() - startTime;
+        const data: MLAnalysisResponse = await response.json();
+
+        if (response.status === 200 && data.status === "success") {
           logger.info(
-            `[ML CLIENT] ${algorithmName} analysis completed successfully in ${executionTime}ms. Results: ${response.data.results.length} anomalies detected`,
+            `[ML CLIENT] ${algorithmName} analysis completed successfully in ${executionTime}ms. Results: ${data.results.length} anomalies detected`,
           );
 
-          return response.data;
+          return data;
         } else {
           logger.error(
-            `[ML CLIENT] ${algorithmName} analysis returned error: ${response.data.error}`,
+            `[ML CLIENT] ${algorithmName} analysis returned error: ${data.error}`,
           );
-          lastError = new Error(`ML service error: ${response.data.error}`);
+          lastError = new Error(`ML service error: ${data.error}`);
         }
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
