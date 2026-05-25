@@ -261,74 +261,107 @@ Return ONLY the JSON object, no other text.`;
 };
 
 /**
- * Generate prompt for multiple insights in one call
- * Useful for batching multiple insight types together
+ * Generate prompt for multiple insights in one call (BATCHED)
+ * OPTIMIZATION: All 5 insights generated in a SINGLE API call
+ * Dramatically reduces quota usage and execution time
  */
 export const batchInsightPrompt = (
   context: string,
   findings: any[],
   insightTypesRequested: string[],
 ): string => {
+  const severityCounts = {
+    CRITICAL: findings.filter((f) => f.severity === "CRITICAL").length,
+    HIGH: findings.filter((f) => f.severity === "HIGH").length,
+    MEDIUM: findings.filter((f) => f.severity === "MEDIUM").length,
+    LOW: findings.filter((f) => f.severity === "LOW").length,
+  };
+
+  const insightSchemas: Record<string, any> = {
+    overview: {
+      summary: "<executive summary of the security posture in 2-3 sentences>",
+      threat_level: "<one of: CRITICAL, HIGH, MEDIUM, LOW>",
+      total_threats: findings.length,
+      affected_systems: "<estimated number>",
+      key_findings: ["<finding 1>", "<finding 2>", "<finding 3>"],
+    },
+    threat_summary: {
+      overall_threat_classification: "<one of: CRITICAL, HIGH, MEDIUM, LOW>",
+      threat_count: findings.length,
+      critical_threats: severityCounts.CRITICAL,
+      high_threats: severityCounts.HIGH,
+      summary_narrative: "<detailed threat narrative paragraph>",
+      immediate_concerns: ["<concern 1>", "<concern 2>", "<concern 3>"],
+    },
+    recommendation: {
+      recommendations: [
+        {
+          title: "<short action title>",
+          priority: "<one of: CRITICAL, HIGH, MEDIUM, LOW>",
+          description: "<detailed description of why this is needed>",
+          actions: ["<specific action 1>", "<specific action 2>"],
+        },
+      ],
+    },
+    attack_pattern: {
+      pattern_type: "<name of the attack pattern>",
+      description: "<detailed description of the observed attack pattern>",
+      affected_endpoints: ["<endpoint 1>", "<endpoint 2>"],
+      attack_flow: ["<step 1 of attack>", "<step 2 of attack>"],
+      severity: "<one of: CRITICAL, HIGH, MEDIUM, LOW>",
+      confidence_score: "<0.0 to 1.0>",
+      likely_goals: [
+        "<potential attacker goal 1>",
+        "<potential attacker goal 2>",
+      ],
+    },
+    anomaly_summary: {
+      anomaly_type: "<type of anomaly detected>",
+      description: "<what makes this behavior anomalous>",
+      confidence_score: "<0.0 to 1.0>",
+      affected_entities: ["<entity 1>", "<entity 2>"],
+      deviation_from_baseline: "<how this deviates from normal behavior>",
+      recommended_action: "<recommended investigative or defensive action>",
+      severity: "<one of: CRITICAL, HIGH, MEDIUM, LOW>",
+    },
+  };
+
+  // Build the response template with only requested insight types
+  const insightTemplate: Record<string, any> = {};
+  insightTypesRequested.forEach((type) => {
+    const key = type.toLowerCase();
+    if (insightSchemas[key]) {
+      insightTemplate[key] = insightSchemas[key];
+    }
+  });
+
   return `${context}
 
-You are a comprehensive cybersecurity analysis system.
+You are a comprehensive cybersecurity analysis system performing a FULL ANALYSIS in a SINGLE CALL.
 
-Based on the analyzer findings above, generate the following insights as a JSON object:
+SEVERITY BREAKDOWN:
+- CRITICAL: ${severityCounts.CRITICAL}
+- HIGH: ${severityCounts.HIGH}
+- MEDIUM: ${severityCounts.MEDIUM}
+- LOW: ${severityCounts.LOW}
+- TOTAL FINDINGS: ${findings.length}
+
+---
+
+Generate ALL requested insight types in a SINGLE JSON response:
 
 {
-  "insights": {
-    ${
-      insightTypesRequested.includes("overview")
-        ? `"overview": ${JSON.stringify({ summary: "", threat_level: "", total_threats: 0, affected_systems: 0, key_findings: [] })},`
-        : ""
-    }
-    ${
-      insightTypesRequested.includes("threat_summary")
-        ? `"threat_summary": ${JSON.stringify({
-            overall_threat_classification: "",
-            threat_count: 0,
-            critical_threats: 0,
-            high_threats: 0,
-            summary_narrative: "",
-            immediate_concerns: [],
-          })},`
-        : ""
-    }
-    ${
-      insightTypesRequested.includes("recommendation")
-        ? `"recommendation": ${JSON.stringify({ recommendations: [] })},`
-        : ""
-    }
-    ${
-      insightTypesRequested.includes("attack_pattern")
-        ? `"attack_pattern": ${JSON.stringify({
-            pattern_type: "",
-            description: "",
-            affected_endpoints: [],
-            attack_flow: [],
-            severity: "",
-            confidence_score: 0,
-            likely_goals: [],
-          })},`
-        : ""
-    }
-    ${
-      insightTypesRequested.includes("anomaly_summary")
-        ? `"anomaly_summary": ${JSON.stringify({
-            anomaly_type: "",
-            description: "",
-            confidence_score: 0,
-            affected_entities: [],
-            deviation_from_baseline: "",
-            recommended_action: "",
-            severity: "",
-          })}`
-        : ""
-    }
-  }
+  "insights": ${JSON.stringify(insightTemplate, null, 2)}
 }
 
-Analyze the security findings and populate ONLY the requested insight types with accurate, actionable intelligence.
+IMPORTANT INSTRUCTIONS:
+1. Generate ALL requested insight types in one response
+2. Each insight must be thoroughly analyzed and actionable
+3. Use the provided severity breakdown context
+4. Ensure confidence_score values are numeric between 0.0 and 1.0
+5. Keep responses concise but comprehensive
+6. ONLY populate the requested insight types
+7. Return ONLY valid JSON, no markdown, no explanations
 
 Return ONLY the JSON object, no other text.`;
 };

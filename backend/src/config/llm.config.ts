@@ -7,7 +7,7 @@ export const llmConfig = {
   // Gemini API
   gemini: {
     apiKey: process.env.GEMINI_API_KEY || "",
-    model: process.env.GEMINI_MODEL || "gemini-2.0-flash",
+    model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
     endpoint: "https://generativelanguage.googleapis.com/v1beta/models",
     maxRetries: 3,
     retryDelayMs: 1000,

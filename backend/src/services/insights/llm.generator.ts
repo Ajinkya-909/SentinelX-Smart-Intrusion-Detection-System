@@ -10,14 +10,7 @@ import {
   InsightRecord,
   ActivityTimelineInsightData,
 } from "@/types/insight.types";
-import {
-  buildLLMContext,
-  overviewPrompt,
-  threatSummaryPrompt,
-  recommendationPrompt,
-  attackPatternPrompt,
-  anomalySummaryPrompt,
-} from "./llm.prompts";
+import { buildLLMContext, batchInsightPrompt } from "./llm.prompts";
 
 // ==========================================
 // TYPES
@@ -53,7 +46,8 @@ export const llmInsightsGenerator = {
   },
 
   /**
-   * Generate AI insights using LLM
+   * Generate AI insights using LLM (BATCHED - Single API Call)
+   * All 5 insight types generated in a single Gemini call for efficiency
    */
   async generateAIInsights(
     request: LLMInsightGenerationRequest,
@@ -88,42 +82,109 @@ export const llmInsightsGenerator = {
       // Build context
       const context = buildLLMContext(request.findings, request.timelineData);
 
-      // Generate insights in parallel
+      // ✨ OPTIMIZATION: Single batch call instead of 5 parallel calls
+      logger.info(
+        `[LLM GENERATOR] Making batched call for ${insightTypes.length} insight types...`,
+      );
+
+      const batchPrompt = batchInsightPrompt(
+        context,
+        request.findings,
+        insightTypes,
+      );
+
+      // Call Gemini once with all insight types
+      const response = await this.callGeminiWithRetry(batchPrompt);
+
+      // Parse batch response
+      let batchResponse: any;
+      try {
+        batchResponse = JSON.parse(response);
+      } catch (parseError) {
+        logger.error(
+          `[LLM GENERATOR] Failed to parse batch response: ${parseError}`,
+        );
+        throw new Error(`Invalid batch JSON response from LLM`);
+      }
+
+      // Extract individual insights from batch response
       const generatedInsights: InsightRecord[] = [];
       const failedInsights: Array<{ insightType: string; reason: string }> = [];
 
-      // Generate each insight type
-      const promises = insightTypes.map(async (insightType) => {
+      if (!batchResponse.insights) {
+        throw new Error("Batch response missing 'insights' object");
+      }
+
+      // Process each insight type from batch response
+      for (const insightType of insightTypes) {
         try {
-          const insight = await this.generateInsightType(
+          const insightData =
+            batchResponse.insights[this.normalizeInsightTypeKey(insightType)];
+
+          if (!insightData) {
+            logger.warn(
+              `[LLM GENERATOR] No data for ${insightType} in batch response`,
+            );
+            failedInsights.push({
+              insightType,
+              reason: "No data in batch response",
+            });
+            continue;
+          }
+
+          // Validate insight data
+          const validation = insightValidators.validateInsightData(
             insightType,
-            request.jobId,
-            context,
-            request.findings,
+            insightData,
           );
 
-          if (insight) {
-            generatedInsights.push(insight);
+          if (!validation.valid) {
+            logger.warn(
+              `[LLM GENERATOR] Validation failed for ${insightType}: ${JSON.stringify(
+                validation.errors,
+              )}`,
+            );
+            failedInsights.push({
+              insightType,
+              reason: `Validation failed: ${validation.errors?.[0] || "Unknown"}`,
+            });
+            continue;
           }
+
+          // Build insight record
+          const insight: InsightRecord = {
+            job_id: request.jobId,
+            insight_type: insightType,
+            title: this.getTitleForInsightType(insightType),
+            description: this.getDescriptionForInsightType(insightType),
+            data: insightData,
+            generated_by: "LLM",
+            model_name: llmConfig.gemini.model,
+            generation_version: "1.0",
+            is_visible: true,
+            display_order: this.getDisplayOrder(insightType),
+          };
+
+          generatedInsights.push(insight);
+          logger.info(`[LLM GENERATOR] Successfully extracted ${insightType}`);
         } catch (error) {
           failedInsights.push({
             insightType,
             reason: error instanceof Error ? error.message : "Unknown error",
           });
         }
-      });
+      }
 
-      await Promise.all(promises);
-
+      const executionTime = Date.now() - startTime;
       logger.info(
-        `[LLM GENERATOR] Generated ${generatedInsights.length} AI insights, ${failedInsights.length} failed`,
+        `[LLM GENERATOR] ✨ Batch complete: ${generatedInsights.length}/${insightTypes.length} insights generated in ${executionTime}ms`,
       );
 
       return {
         jobId: request.jobId,
         generatedInsights,
         failedInsights,
-        executionTimeMs: Date.now() - startTime,
+        executionTimeMs: executionTime,
       };
     } catch (error) {
       logger.error(
@@ -136,104 +197,17 @@ export const llmInsightsGenerator = {
   },
 
   /**
-   * Generate a specific insight type
+   * Normalize insight type key for batch response
+   * Converts OVERVIEW -> overview, THREAT_SUMMARY -> threat_summary, etc.
    */
-  async generateInsightType(
-    insightType: string,
-    jobId: string,
-    context: string,
-    findings: any[],
-  ): Promise<InsightRecord | null> {
-    try {
-      logger.info(`[LLM GENERATOR] Generating ${insightType} insight...`);
-
-      let prompt = "";
-      let expectedDataStructure: string = "";
-
-      // Select prompt based on insight type
-      switch (insightType) {
-        case "OVERVIEW":
-          prompt = overviewPrompt(context, findings);
-          expectedDataStructure = "overview";
-          break;
-        case "THREAT_SUMMARY":
-          prompt = threatSummaryPrompt(context, findings);
-          expectedDataStructure = "threat_summary";
-          break;
-        case "RECOMMENDATION":
-          prompt = recommendationPrompt(context, findings);
-          expectedDataStructure = "recommendation";
-          break;
-        case "ATTACK_PATTERN":
-          prompt = attackPatternPrompt(context, findings);
-          expectedDataStructure = "attack_pattern";
-          break;
-        case "ANOMALY_SUMMARY":
-          prompt = anomalySummaryPrompt(context, findings);
-          expectedDataStructure = "anomaly_summary";
-          break;
-        default:
-          logger.warn(`[LLM GENERATOR] Unknown insight type: ${insightType}`);
-          return null;
-      }
-
-      // Call LLM
-      const response = await this.callGemini(prompt);
-
-      // Parse and validate response
-      let insightData: any;
-      try {
-        insightData = JSON.parse(response);
-      } catch (parseError) {
-        logger.error(
-          `[LLM GENERATOR] Failed to parse LLM response for ${insightType}: ${parseError}`,
-        );
-        throw new Error(
-          `Invalid JSON response from LLM: ${response.substring(0, 200)}`,
-        );
-      }
-
-      // Validate insight data
-      const validation = insightValidators.validateInsightData(
-        insightType,
-        insightData,
-      );
-
-      if (!validation.valid) {
-        logger.warn(
-          `[LLM GENERATOR] Validation failed for ${insightType}: ${JSON.stringify(
-            validation.errors,
-          )}`,
-        );
-        throw new Error(
-          `Validation failed: ${validation.errors?.[0]?.message || "Unknown error"}`,
-        );
-      }
-
-      // Build insight record
-      const insight: InsightRecord = {
-        job_id: jobId,
-        insight_type: insightType,
-        title: this.getTitleForInsightType(insightType),
-        description: this.getDescriptionForInsightType(insightType),
-        data: insightData,
-        generated_by: "LLM",
-        model_name: llmConfig.gemini.model,
-        generation_version: "1.0",
-        is_visible: true,
-        display_order: this.getDisplayOrder(insightType),
-      };
-
-      logger.info(`[LLM GENERATOR] Successfully generated ${insightType}`);
-      return insight;
-    } catch (error) {
-      logger.error(
-        `[LLM GENERATOR] Error generating ${insightType}: ${
-          error instanceof Error ? error.message : error
-        }`,
-      );
-      throw error;
-    }
+  normalizeInsightTypeKey(type: string): string {
+    return type
+      .toLowerCase()
+      .replace(/_/g, "_")
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join("_")
+      .toLowerCase();
   },
 
   /**

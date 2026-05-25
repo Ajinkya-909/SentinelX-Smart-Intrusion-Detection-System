@@ -144,7 +144,7 @@ async function testInsightsGeneration(jobId: string): Promise<TestResult> {
       totalInsights: result.total_insights,
       failedInsights: result.failed_insights,
       executionTimeMs: result.executionTimeMs,
-      errors: errors.length > 0 ? errors : undefined,
+      ...(errors.length > 0 && { errors }),
     };
 
     if (testResult.success) {
