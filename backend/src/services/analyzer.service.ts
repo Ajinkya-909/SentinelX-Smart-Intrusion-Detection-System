@@ -1,5 +1,7 @@
 import logger from "../config/logger";
-import pipelineRepository from "../repositories/pipeline.repository";
+import pipelineRepository, {
+  AnalyzerFindingInput,
+} from "../repositories/pipeline.repository";
 import { jobRepository } from "../repositories";
 import { prisma } from "../config/db";
 import { JobStageEnum } from "../types/db.types";

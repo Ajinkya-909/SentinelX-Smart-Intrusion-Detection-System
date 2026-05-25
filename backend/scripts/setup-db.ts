@@ -5,7 +5,7 @@ import path from "path"
 
 async function setupDatabase() {
   const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: process.env.NEON_DATABASE_URL || process.env.DOCKER_DATABASE_URL,
   })
 
   try {

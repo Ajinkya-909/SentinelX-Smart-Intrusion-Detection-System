@@ -8,6 +8,6 @@ export default defineConfig({
   },
   datasource: {
     // Explicitly load the URL from your.env file
-    url: env("DATABASE_URL"),
+    url: env("NEON_DATABASE_URL"),
   },
 });

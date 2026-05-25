@@ -1,5 +1,10 @@
 import { jobRepository } from "@/repositories/job.repository";
-import { Job, JobStatusEnum, JobStageEnum } from "../../types/db.types";
+import {
+  Job,
+  JobStatusEnum,
+  JobStageEnum,
+  JobOutcomeEnum,
+} from "../../types/db.types";
 import {
   JobUploadRequest,
   JobListResponse,
@@ -121,6 +126,23 @@ const jobService = {
 
     const deletedJob = await jobRepository.deleteJob(jobId);
     return deletedJob;
+  },
+
+  async markJobCompletedWithOutcome(
+    jobId: string,
+    outcome: JobOutcomeEnum,
+  ): Promise<Job> {
+    const job = await jobRepository.getJobById(jobId);
+    if (!job) {
+      throw new ApiError(404, "Job not found");
+    }
+
+    const updatedJob = await jobRepository.updateJob(jobId, {
+      status: JobStatusEnum.COMPLETED,
+      outcome: outcome,
+      last_completed_stage: JobStageEnum.INSIGHTS_GENERATED,
+    });
+    return updatedJob;
   },
 };
 

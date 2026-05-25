@@ -2,8 +2,18 @@ import "dotenv/config";
 import { Pool } from "pg";
 
 async function createExtension() {
+  const connectionString =
+    process.env.NEON_DATABASE_URL || process.env.DOCKER_DATABASE_URL;
+
+  if (!connectionString) {
+    console.error(
+      "❌ No database connection URL found. Set NEON_DATABASE_URL or DATABASE_URL in .env",
+    );
+    process.exit(1);
+  }
+
   const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString,
   });
 
   try {

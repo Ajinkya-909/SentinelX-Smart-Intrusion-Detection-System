@@ -1,9 +1,10 @@
 import { JobStageEnum } from "../types/db.types";
+import { JobStatusEnum, JobOutcomeEnum } from "../types/db.types";
 import { preprocessorService } from "./preprocessor/preprocessor.service";
 import { parserService } from "./parser/parser.service";
 import { normalizerService } from "./normalizer/normalizer.service";
 import { analyzerService } from "./analyzers/analyzer.service";
-import { insightsService } from "./insights/insights.service";
+import { insightsOrchestrator } from "../services/insights/insights.orchestrator";
 import { jobService } from "../services/jobs/job.service";
 import { typeDetectorService } from "./type-detector/type-detector.service";
 
@@ -30,7 +31,7 @@ export const executeOrchestrator = async (
     let batchCount = 0;
     let totalLinesProcessed = 0;
     let detectionResult: any = null;
-    const allInsights: any[] = [];
+    let insightsGenerationFailed = false;
 
     // Iterate through batches from preprocessing
     for await (const batch of preprocessorService.preprocess(filePath)) {
@@ -113,32 +114,9 @@ export const executeOrchestrator = async (
         `[ORCHESTRATOR] 🔍 STAGE 4/5: ANALYZING batch #${batchCount}...`,
       );
       const startAnalyzeTime = Date.now();
-      const findings = await analyzerService.analyze(jobId);
+      await analyzerService.analyze(jobId);
       const analyzeTime = Date.now() - startAnalyzeTime;
-      console.log(
-        `[ORCHESTRATOR]   ✓ Analyze: ${findings?.length || 0} findings detected (${analyzeTime}ms)`,
-      );
-
-      // ================================================
-      // STAGE 5: INSIGHTS GENERATION (Each batch)
-      // ================================================
-      console.log(
-        `[ORCHESTRATOR] 💡 STAGE 5/5: GENERATING INSIGHTS for batch #${batchCount}...`,
-      );
-      const startInsightsTime = Date.now();
-      const batchInsights = await insightsService.generateInsights(
-        jobId,
-        findings,
-      );
-      const insightsTime = Date.now() - startInsightsTime;
-      console.log(
-        `[ORCHESTRATOR]   ✓ Insights: ${batchInsights?.length || 0} insights generated (${insightsTime}ms)`,
-      );
-
-      // Accumulate insights from all batches
-      if (batchInsights) {
-        allInsights.push(...batchInsights);
-      }
+      console.log(`[ORCHESTRATOR]   ✓ Analyze: completed (${analyzeTime}ms)`);
 
       totalLinesProcessed += batch.metadata.lineCount;
 
@@ -159,7 +137,45 @@ export const executeOrchestrator = async (
     }
 
     // ================================================
-    // PIPELINE COMPLETE
+    // STAGE 5: INSIGHTS GENERATION (After all batches)
+    // ================================================
+    console.log(`[ORCHESTRATOR] 💡 STAGE 5/5: GENERATING COMPLETE INSIGHTS...`);
+    const startInsightsTime = Date.now();
+
+    try {
+      const insightsResult =
+        await insightsOrchestrator.generateCompleteInsights(jobId);
+      const insightsTime = Date.now() - startInsightsTime;
+
+      console.log(
+        `[ORCHESTRATOR]   ✓ Deterministic Insights: ${insightsResult.deterministic_insights.length}`,
+      );
+      console.log(
+        `[ORCHESTRATOR]   ✓ LLM Insights: ${insightsResult.llm_insights.length}`,
+      );
+      console.log(
+        `[ORCHESTRATOR]   ✓ Total Insights: ${insightsResult.total_insights} (${insightsTime}ms)`,
+      );
+
+      if (insightsResult.failed_insights.length > 0) {
+        console.warn(
+          `[ORCHESTRATOR]   ⚠ Failed Insights: ${insightsResult.failed_insights.length}`,
+        );
+        insightsGenerationFailed = true;
+      }
+    } catch (error) {
+      console.error(
+        `[ORCHESTRATOR] ❌ Insights generation error: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+      insightsGenerationFailed = true;
+      // Don't fail the entire pipeline if insights generation fails
+      // Insights are supplementary to the main analysis
+    }
+
+    // ================================================
+    // PIPELINE COMPLETE: Mark job as completed
     // ================================================
     await jobService.updateJobStage(
       jobId,
@@ -167,18 +183,26 @@ export const executeOrchestrator = async (
       100,
     );
 
+    // Determine job outcome based on whether insights generation had failures
+    const jobOutcome = insightsGenerationFailed
+      ? JobOutcomeEnum.WARNING
+      : JobOutcomeEnum.SUCCESS;
+
+    await jobService.markJobCompletedWithOutcome(jobId, jobOutcome);
+
     console.log(
       `\n========== [ORCHESTRATOR] Pipeline COMPLETED for job ${jobId} ==========`,
     );
+    console.log(`[ORCHESTRATOR] Job Outcome: ${jobOutcome}`);
     console.log(
-      `[ORCHESTRATOR] Summary: ${batchCount} batches | ${totalLinesProcessed} total logs | ${allInsights.length} insights generated\n`,
+      `[ORCHESTRATOR] Summary: ${batchCount} batches | ${totalLinesProcessed} total logs processed\n`,
     );
 
     return {
       success: true,
       jobId,
       lastStage: JobStageEnum.INSIGHTS_GENERATED,
-      insights: allInsights,
+      insights: null,
     };
   } catch (error) {
     console.error(

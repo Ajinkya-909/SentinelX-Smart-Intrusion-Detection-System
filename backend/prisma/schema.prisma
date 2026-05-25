@@ -41,17 +41,50 @@ model analyzer_findings {
 }
 
 model insights {
-  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  job_id     String    @db.Uuid
-  type       String    @db.VarChar(100)
-  title      String?
-  severity   String?   @db.VarChar(50)
-  data       Json?
+  id     String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  job_id String @db.Uuid
+
+  // Insight identity
+  insight_type insight_type
+
+  // Display metadata
+  title       String? @db.VarChar(255)
+  description String?
+
+  // Severity / priority
+  severity         insight_severity?
+  priority_score   Float?
+  confidence_score Float?
+
+  // Main frontend payload
+  data Json
+
+  // AI metadata
+  generated_by       insight_generator @default(LLM)
+  model_name         String?           @db.VarChar(100)
+  generation_version String?           @db.VarChar(50)
+
+  // Traceability
+  finding_references Json? // References to analyzer_findings
+  log_references     Json? // References to normalized_logs
+
+  // Rendering / state
+  is_visible    Boolean @default(true)
+  display_order Int?
+
+  // Metadata
+  metadata Json?
+
+  // Timestamps
   created_at DateTime? @default(now()) @db.Timestamp(6)
-  jobs       jobs      @relation(fields: [job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  updated_at DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+
+  // Relations
+  jobs jobs @relation(fields: [job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([job_id], map: "idx_insights_job_id")
-  @@index([type], map: "idx_insights_type")
+  @@index([insight_type], map: "idx_insights_insight_type")
+  @@index([severity], map: "idx_insights_severity")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -147,4 +180,44 @@ enum analyzer_finding_status {
   RESOLVED
   DISMISSED
   DUPLICATE
+}
+
+// ===== INSIGHTS ENUMS =====
+
+enum insight_type {
+  // Mandatory core types
+  OVERVIEW
+  KPI
+  ALERT
+  THREAT_SUMMARY
+  SEVERITY_DISTRIBUTION
+  ACTIVITY_TIMELINE
+  THREAT_TIMELINE
+  TOP_ATTACKERS
+  RECOMMENDATION
+
+  // Optional/Advanced types
+  ATTACK_PATTERN
+  PORT_SCAN_PATTERN
+  FAILED_LOGIN_ANALYSIS
+  TRAFFIC_SPIKE
+  EVENT_TYPE_DISTRIBUTION
+  GEO_ANALYSIS
+  SUSPICIOUS_IP_CLUSTER
+  ANOMALY_SUMMARY
+  ATTACK_CAMPAIGN
+}
+
+enum insight_severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum insight_generator {
+  LLM
+  DETERMINISTIC
+  HYBRID
 }

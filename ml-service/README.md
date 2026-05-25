@@ -6,6 +6,11 @@
 pip install -r requirements.txt
 ```
 
+## ENV cmd
+```
+.\venv\Scripts\activate
+```
+
 ## Run the App
 
 ```bash
@@ -15,5 +20,5 @@ python main.py
 Or using Uvicorn directly:
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app
 ```

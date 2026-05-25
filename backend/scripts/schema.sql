@@ -33,6 +33,61 @@ CREATE TYPE job_outcome_enum AS ENUM (
   'WARNING'
 );
 
+-- Analyzer findings severity
+CREATE TYPE analyzer_finding_severity AS ENUM (
+  'CRITICAL',
+  'HIGH',
+  'MEDIUM',
+  'LOW',
+  'INFO'
+);
+
+-- Analyzer findings status
+CREATE TYPE analyzer_finding_status AS ENUM (
+  'ACTIVE',
+  'RESOLVED',
+  'DISMISSED',
+  'DUPLICATE'
+);
+
+-- Insight types
+CREATE TYPE insight_type AS ENUM (
+  'OVERVIEW',
+  'KPI',
+  'ALERT',
+  'THREAT_SUMMARY',
+  'SEVERITY_DISTRIBUTION',
+  'ACTIVITY_TIMELINE',
+  'THREAT_TIMELINE',
+  'TOP_ATTACKERS',
+  'RECOMMENDATION',
+  'ATTACK_PATTERN',
+  'PORT_SCAN_PATTERN',
+  'FAILED_LOGIN_ANALYSIS',
+  'TRAFFIC_SPIKE',
+  'EVENT_TYPE_DISTRIBUTION',
+  'GEO_ANALYSIS',
+  'SUSPICIOUS_IP_CLUSTER',
+  'ANOMALY_SUMMARY',
+  'ATTACK_CAMPAIGN'
+);
+
+-- Insight severity levels
+CREATE TYPE insight_severity AS ENUM (
+  'CRITICAL',
+  'HIGH',
+  'MEDIUM',
+  'LOW',
+  'INFO'
+);
+
+-- Insight generation source
+CREATE TYPE insight_generator AS ENUM (
+  'LLM',
+  'DETERMINISTIC',
+  'HYBRID'
+);
+
 -- ================================
 -- USERS TABLE (Auth & Profile)
 -- ================================
@@ -108,7 +163,7 @@ CREATE TABLE normalized_logs (
 );
 
 -- ================================
--- INSIGHTS TABLE
+-- INSIGHTS TABLE (AI-Generated Intelligence)
 -- ================================
 
 CREATE TABLE insights (
@@ -116,13 +171,40 @@ CREATE TABLE insights (
 
   job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
 
-  type VARCHAR(100) NOT NULL,
-  title TEXT,
-  severity VARCHAR(50),
+  -- Insight identity
+  insight_type insight_type NOT NULL,
 
-  data JSONB,
+  -- Display metadata
+  title VARCHAR(255),
+  description TEXT,
 
-  created_at TIMESTAMP DEFAULT NOW()
+  -- Severity / priority
+  severity insight_severity,
+  priority_score FLOAT,
+  confidence_score FLOAT,
+
+  -- Main frontend payload
+  data JSONB NOT NULL,
+
+  -- AI metadata
+  generated_by insight_generator DEFAULT 'LLM',
+  model_name VARCHAR(100),
+  generation_version VARCHAR(50),
+
+  -- Traceability
+  finding_references JSONB,  -- References to analyzer_findings
+  log_references JSONB,      -- References to normalized_logs
+
+  -- Rendering / state
+  is_visible BOOLEAN DEFAULT TRUE,
+  display_order INT,
+
+  -- Metadata
+  metadata JSONB,
+
+  -- Timestamps
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
 );
 
 -- ================================
@@ -150,6 +232,12 @@ BEFORE UPDATE ON jobs
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
+-- Trigger for insights table
+CREATE TRIGGER update_insights_updated_at
+BEFORE UPDATE ON insights
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
 -- ================================
 -- INDEXES (IMPORTANT FOR PERFORMANCE)
 -- ================================
@@ -169,4 +257,5 @@ CREATE INDEX idx_logs_ip ON normalized_logs(ip_address);
 
 -- Insights
 CREATE INDEX idx_insights_job_id ON insights(job_id);
-CREATE INDEX idx_insights_type ON insights(type);
+CREATE INDEX idx_insights_insight_type ON insights(insight_type);
+CREATE INDEX idx_insights_severity ON insights(severity);
