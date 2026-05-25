@@ -4,7 +4,7 @@ import { preprocessorService } from "./preprocessor/preprocessor.service";
 import { parserService } from "./parser/parser.service";
 import { normalizerService } from "./normalizer/normalizer.service";
 import { analyzerService } from "./analyzers/analyzer.service";
-import { insightsOrchestrator } from "../services/insights/insights.orchestrator";
+import { insightsOrchestrator } from "./insights/insights.orchestrator";
 import { jobService } from "../services/jobs/job.service";
 import { typeDetectorService } from "./type-detector/type-detector.service";
 

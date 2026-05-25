@@ -1,6 +1,8 @@
 /**
  * Insights Orchestrator
  * Orchestrates complete insights generation: deterministic + LLM
+ *
+ * Location: /pipeline/insights/ (part of pipeline orchestration)
  */
 
 import logger from "@/config/logger";

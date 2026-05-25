@@ -11,7 +11,7 @@
 
 import "dotenv/config";
 import { initializePrisma } from "@/config/db";
-import { insightsOrchestrator } from "@/services/insights/insights.orchestrator";
+import { insightsOrchestrator } from "@/pipeline/insights/insights.orchestrator";
 import logger from "@/config/logger";
 
 interface TestResult {
