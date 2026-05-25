@@ -46,8 +46,8 @@ class OrchestratorService:
         try:
             logger.info(f"[ORCHESTRATOR] Starting analysis {analysis_id}")
             
-            # Convert request vectors to list of dicts
-            vectors_dict = request.vectors
+            # Convert request vectors to list of dicts (from Pydantic objects)
+            vectors_dict = [v.dict() for v in request.vectors]
             
             # Validate input
             if not validate_feature_vectors(vectors_dict):

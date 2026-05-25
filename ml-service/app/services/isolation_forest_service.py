@@ -38,6 +38,9 @@ class IsolationForestService:
         try:
             logger.info(f"[IF SERVICE] Analyzing {len(vectors_dict)} vectors")
             
+            # Fit model on the data first
+            isolation_forest_model.fit(X_scaled)
+            
             # Get predictions and scores
             predictions = isolation_forest_model.predict(X_scaled)
             scores = isolation_forest_model.score_samples(X_scaled)

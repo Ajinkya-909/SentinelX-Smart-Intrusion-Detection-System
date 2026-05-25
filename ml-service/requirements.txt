@@ -4,3 +4,8 @@ pydantic==2.4.2
 numpy>=2.0.0
 scikit-learn>=1.4.2
 python-dotenv==1.0.1
+
+# Testing dependencies
+pytest==7.4.3
+pytest-cov==4.1.0
+httpx==0.25.2
