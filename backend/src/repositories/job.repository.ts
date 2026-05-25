@@ -137,6 +137,36 @@ const jobRepository = {
     });
     return (job?.processing_metadata as unknown as DetectionResult) || null;
   },
+
+  /**
+   * Prepare job for reanalysis
+   * Resets checkpoint to NORMALIZED and clears old findings/insights
+   * @param jobId - UUID of the job
+   * @returns - The updated Job object
+   */
+  async prepareForReanalysis(jobId: string): Promise<Job> {
+    // Use transaction to ensure all-or-nothing
+    const [updatedJob] = await prisma.$transaction([
+      // Reset checkpoint to NORMALIZED
+      prisma.jobs.update({
+        where: { id: jobId },
+        data: {
+          last_completed_stage: JobStageEnum.NORMALIZED,
+          retry_count: 0, // Reset retries for fresh analysis
+        },
+      }),
+      // Delete old analyzer findings
+      prisma.analyzer_findings.deleteMany({
+        where: { job_id: jobId },
+      }),
+      // Delete old insights
+      prisma.insights.deleteMany({
+        where: { job_id: jobId },
+      }),
+    ]);
+
+    return updatedJob as Job;
+  },
 };
 
 export { jobRepository };

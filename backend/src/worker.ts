@@ -3,6 +3,7 @@ import { initializePrisma } from "./config/db";
 import { initializeRedis } from "./config/redis";
 import { initializeQueue } from "./queue";
 import { startWorker } from "./workers/job.worker";
+import { initializeRecoveryQueue } from "./queue/recovery-queue";
 
 dotenv.config({
   path: "./.env",
@@ -20,6 +21,8 @@ const startWorkerProcess = async () => {
       await initializeRedis();
       // Initialize job queue after Redis is ready
       initializeQueue();
+      // Initialize recovery queue after Redis is ready
+      initializeRecoveryQueue();
     } catch (error) {
       console.warn(
         "⚠️  Redis initialization failed, continuing without Redis:",
@@ -28,7 +31,11 @@ const startWorkerProcess = async () => {
     }
 
     await startWorker();
-    console.log("[WORKER] ✅ Worker started and listening for jobs");
+    console.log("[WORKER] ✅ Main worker started and listening for jobs");
+
+    console.log(
+      "[WORKER] ✅ Recovery worker started and listening for failed jobs",
+    );
 
     process.on("SIGINT", async () => {
       console.log("\n[WORKER] Shutting down gracefully...");

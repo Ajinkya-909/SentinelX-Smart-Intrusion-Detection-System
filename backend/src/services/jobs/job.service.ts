@@ -63,6 +63,17 @@ const jobService = {
     return updatedJob;
   },
 
+  async updateJobRetryCount(jobId: string): Promise<Job> {
+    const job = await jobRepository.getJobById(jobId);
+    if (!job) throw new ApiError(404, "Job not found");
+
+    const newRetryCount = (job.retry_count || 0) + 1;
+    const updatedJob = await jobRepository.updateJob(jobId, {
+      retry_count: newRetryCount,
+    });
+    return updatedJob;
+  },
+
   async updateJobStage(
     jobId: string,
     lastCompletedStage: JobStageEnum,
@@ -143,6 +154,22 @@ const jobService = {
       last_completed_stage: JobStageEnum.INSIGHTS_GENERATED,
     });
     return updatedJob;
+  },
+
+  async reanalyzeJob(jobId: string): Promise<Job> {
+    // Get job and verify it exists
+    const job = await jobRepository.getJobById(jobId);
+    if (!job) {
+      throw new ApiError(404, "Job not found");
+    }
+
+    // Verify job has normalized logs (can't reanalyze if not normalized yet)
+    // This check will be done in controller, but adding for safety
+
+    // Prepare for reanalysis: reset checkpoint, clear old findings/insights
+    const preparedJob = await jobRepository.prepareForReanalysis(jobId);
+
+    return preparedJob;
   },
 };
 

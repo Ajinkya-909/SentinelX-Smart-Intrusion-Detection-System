@@ -1,5 +1,5 @@
 import { jobService } from "../jobs/job.service";
-import { executeOrchestrator } from "@/pipeline/orchestrator";
+import { executeOrchestrator } from "@/pipeline/orchestrator-simple";
 import { JobStatusEnum, JobStageEnum } from "../../types/db.types";
 import { ApiError } from "../../utils/api-error";
 
