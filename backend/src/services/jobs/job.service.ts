@@ -171,6 +171,213 @@ const jobService = {
 
     return preparedJob;
   },
+
+  async getJobResults(
+    jobId: string,
+    limit: number = 20,
+    offset: number = 0,
+  ): Promise<any> {
+    // Get job details
+    const job = await jobRepository.getJobById(jobId);
+    if (!job) {
+      throw new ApiError(404, "Job not found");
+    }
+
+    // Get findings and insights
+    const findings = await jobRepository.getFindings(jobId, limit, offset);
+    const insights = await jobRepository.getInsights(jobId, limit, offset);
+
+    // Calculate metrics
+    const totalFindings = await jobRepository.countFindings(jobId);
+    const criticalFindings = await jobRepository.countFindingsBySeverity(
+      jobId,
+      "CRITICAL",
+    );
+    const highFindings = await jobRepository.countFindingsBySeverity(
+      jobId,
+      "HIGH",
+    );
+
+    // Determine overall severity
+    let overallSeverity = "LOW";
+    if (criticalFindings > 0) overallSeverity = "CRITICAL";
+    else if (highFindings > 0) overallSeverity = "HIGH";
+
+    // Helper function to parse JSON fields - Prisma returns them as objects or strings
+    const parseJsonField = (field: any): any => {
+      if (!field) return undefined;
+      if (typeof field === "string") {
+        try {
+          return JSON.parse(field);
+        } catch {
+          return field;
+        }
+      }
+      return field;
+    };
+
+    // Transform findings to threats format
+    const threats = findings.map((finding) => {
+      const affectedEntities = parseJsonField(finding.affected_entities);
+      const metadata = parseJsonField(finding.metadata);
+      const logReferences = parseJsonField(finding.log_references);
+
+      return {
+        id: finding.id,
+        type: finding.finding_type,
+        severity: finding.severity,
+        message: finding.title || finding.summary,
+        timestamp: finding.detected_at,
+        source: affectedEntities ? affectedEntities[0] : "unknown",
+        user: metadata ? metadata.user : undefined,
+        logRefs: logReferences || [],
+        recommendation: finding.recommendation,
+        confidence: finding.confidence,
+      };
+    });
+
+    return {
+      status: "COMPLETED",
+      summary: `Security analysis completed. ${totalFindings} threats detected.`,
+      severity: overallSeverity,
+      metrics: {
+        totalFindings,
+        criticalFindings,
+        highFindings,
+      },
+      threats,
+      insights: insights.map((insight) => {
+        const insightData = parseJsonField(insight.data);
+        return {
+          id: insight.id,
+          type: insight.insight_type,
+          title: insight.title,
+          description: insight.description,
+          severity: insight.severity,
+          data: insightData || {},
+        };
+      }),
+      outcome: job.outcome || "SUCCESS",
+    };
+  },
+
+  async getJobInsights(
+    jobId: string,
+    limit: number = 20,
+    offset: number = 0,
+  ): Promise<any> {
+    // Get insights from database
+    const insights = await jobRepository.getInsights(jobId, limit, offset);
+    const totalInsights = await jobRepository.countInsights(jobId);
+
+    // Helper function to parse JSON fields
+    const parseJsonField = (field: any): any => {
+      if (!field) return undefined;
+      if (typeof field === "string") {
+        try {
+          return JSON.parse(field);
+        } catch {
+          return field;
+        }
+      }
+      return field;
+    };
+
+    // Transform insights
+    const formattedInsights = insights.map((insight) => {
+      const insightData = parseJsonField(insight.data);
+      return {
+        id: insight.id,
+        type: insight.insight_type,
+        title: insight.title,
+        description: insight.description,
+        severity: insight.severity,
+        priority_score: insight.priority_score,
+        confidence_score: insight.confidence_score,
+        data: insightData || {},
+        is_visible: insight.is_visible,
+        created_at: insight.created_at,
+        updated_at: insight.updated_at,
+      };
+    });
+
+    return {
+      status: "COMPLETED",
+      insights: formattedInsights,
+      pagination: {
+        limit,
+        offset,
+        total: totalInsights,
+      },
+    };
+  },
+
+  async getJobFindings(
+    jobId: string,
+    limit: number = 20,
+    offset: number = 0,
+  ): Promise<any> {
+    // Get findings from database
+    const findings = await jobRepository.getFindings(jobId, limit, offset);
+    const totalFindings = await jobRepository.countFindings(jobId);
+
+    // Helper function to parse JSON fields
+    const parseJsonField = (field: any): any => {
+      if (!field) return undefined;
+      if (typeof field === "string") {
+        try {
+          return JSON.parse(field);
+        } catch {
+          return field;
+        }
+      }
+      return field;
+    };
+
+    // Transform findings
+    const formattedFindings = findings.map((finding) => {
+      const affectedEntities = parseJsonField(finding.affected_entities);
+      const metadata = parseJsonField(finding.metadata);
+      const logReferences = parseJsonField(finding.log_references);
+      const evidence = parseJsonField(finding.evidence);
+
+      return {
+        id: finding.id,
+        fingerprint: finding.fingerprint,
+        analyzer: finding.analyzer,
+        analyzer_version: finding.analyzer_version,
+        finding_type: finding.finding_type,
+        category: finding.category,
+        severity: finding.severity,
+        confidence: finding.confidence,
+        title: finding.title,
+        summary: finding.summary,
+        recommendation: finding.recommendation,
+        log_references: logReferences || [],
+        affected_entities: affectedEntities || [],
+        evidence: evidence || {},
+        metadata: metadata || {},
+        status: finding.status,
+        detected_at: finding.detected_at,
+        created_at: finding.created_at,
+        updated_at: finding.updated_at,
+      };
+    });
+
+    return {
+      status: "COMPLETED",
+      findings: formattedFindings,
+      pagination: {
+        limit,
+        offset,
+        total: totalFindings,
+      },
+    };
+  },
+
+  async retryJob(jobId: string): Promise<Job> {
+    return await jobRepository.prepareForRetry(jobId);
+  },
 };
 
 export { jobService };

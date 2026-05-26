@@ -167,6 +167,126 @@ const jobRepository = {
 
     return updatedJob as Job;
   },
+
+  /**
+   * Fetch analyzer findings (threats) for a job with pagination
+   * @param jobId - UUID of the job
+   * @param limit - Maximum number of findings to return
+   * @param offset - Number of findings to skip
+   * @returns - Array of analyzer findings
+   */
+  async getFindings(
+    jobId: string,
+    limit: number = 20,
+    offset: number = 0,
+  ): Promise<any[]> {
+    const findings = await prisma.analyzer_findings.findMany({
+      where: { job_id: jobId },
+      take: limit,
+      skip: offset,
+      orderBy: [{ severity: "desc" }, { detected_at: "desc" }],
+    });
+    return findings;
+  },
+
+  /**
+   * Fetch insights for a job with pagination
+   * @param jobId - UUID of the job
+   * @param limit - Maximum number of insights to return
+   * @param offset - Number of insights to skip
+   * @returns - Array of insights
+   */
+  async getInsights(
+    jobId: string,
+    limit: number = 20,
+    offset: number = 0,
+  ): Promise<any[]> {
+    const insights = await prisma.insights.findMany({
+      where: { job_id: jobId, is_visible: true },
+      take: limit,
+      skip: offset,
+      orderBy: { display_order: "asc" },
+    });
+    return insights;
+  },
+
+  /**
+   * Count total findings for a job
+   * @param jobId - UUID of the job
+   * @returns - Total count of findings
+   */
+  async countFindings(jobId: string): Promise<number> {
+    const count = await prisma.analyzer_findings.count({
+      where: { job_id: jobId },
+    });
+    return count;
+  },
+
+  /**
+   * Count findings by severity for a job
+   * @param jobId - UUID of the job
+   * @param severity - Severity level (CRITICAL, HIGH, MEDIUM, LOW, INFO)
+   * @returns - Count of findings with that severity
+   */
+  async countFindingsBySeverity(
+    jobId: string,
+    severity: string,
+  ): Promise<number> {
+    const count = await prisma.analyzer_findings.count({
+      where: { job_id: jobId, severity: severity as any },
+    });
+    return count;
+  },
+
+  /**
+   * Count total insights for a job
+   * @param jobId - UUID of the job
+   * @returns - Total count of visible insights
+   */
+  async countInsights(jobId: string): Promise<number> {
+    const count = await prisma.insights.count({
+      where: { job_id: jobId, is_visible: true },
+    });
+    return count;
+  },
+
+  /**
+   * Prepare job for complete retry from upload stage
+   * Resets job to UPLOADED state and clears all pipeline data
+   * Keeps original file and user association intact
+   * @param jobId - UUID of the job
+   * @returns - The updated Job object
+   */
+  async prepareForRetry(jobId: string): Promise<Job> {
+    // Use transaction to ensure all-or-nothing
+    const [updatedJob] = await prisma.$transaction([
+      // Reset job to initial UPLOADED state
+      prisma.jobs.update({
+        where: { id: jobId },
+        data: {
+          status: JobStatusEnum.UPLOADED,
+          progress: 0,
+          last_completed_stage: null,
+          outcome: null,
+          error_message: null,
+        },
+      }),
+      // Delete normalized logs
+      prisma.normalized_logs.deleteMany({
+        where: { job_id: jobId },
+      }),
+      // Delete old analyzer findings
+      prisma.analyzer_findings.deleteMany({
+        where: { job_id: jobId },
+      }),
+      // Delete old insights
+      prisma.insights.deleteMany({
+        where: { job_id: jobId },
+      }),
+    ]);
+
+    return updatedJob as Job;
+  },
 };
 
 export { jobRepository };

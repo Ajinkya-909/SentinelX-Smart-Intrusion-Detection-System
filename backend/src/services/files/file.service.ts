@@ -1,11 +1,11 @@
 import { promises as fs } from "fs";
 import path from "path";
+import { createReadStream } from "fs";
 import { ApiError } from "@/utils/api-error";
 import { jobRepository } from "@/repositories/job.repository";
 import { UPLOAD_ERRORS } from "@/constants/upload.constants";
 
 const fileService = {
-
   async checkFile(file: Express.Multer.File) {
     if (!file) {
       throw new ApiError(400, UPLOAD_ERRORS.NO_FILE);
@@ -73,6 +73,25 @@ const fileService = {
       return stats.size;
     } catch (error: any) {
       throw new ApiError(500, "Failed to get file size");
+    }
+  },
+
+  async downloadFile(filePath: string): Promise<NodeJS.ReadableStream> {
+    try {
+      // Check if file exists
+      const exists = await this.fileExists(filePath);
+      if (!exists) {
+        throw new ApiError(404, "File not found");
+      }
+
+      // Return read stream for file download
+      const stream = createReadStream(filePath);
+      return stream;
+    } catch (error: any) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      throw new ApiError(500, "Failed to download file");
     }
   },
 };
