@@ -16,6 +16,7 @@ import {
   downloadJobFile,
 } from "@/controllers/job.controller";
 import { validate } from "@/middlewares/validator.middleware";
+import { jobLimiter } from "@/middlewares/rateLimit.middleware";
 
 const router = Router();
 
@@ -24,6 +25,7 @@ router.get("/", verifyJWT, listUserJobs);
 router.post(
   "/upload",
   verifyJWT,
+  jobLimiter,
   uploadWithErrorHandler,
   validateUpload,
   uploadFile,
@@ -39,9 +41,9 @@ router.get("/:id/findings", verifyJWT, getJobFindings);
 
 router.get("/:id/file", verifyJWT, downloadJobFile);
 
-router.post("/:id/reanalyze", verifyJWT, reanalyzeJob);
+router.post("/:id/reanalyze", verifyJWT, jobLimiter, reanalyzeJob);
 
-router.post("/:id/retry", verifyJWT, retryJob);
+router.post("/:id/retry", verifyJWT, jobLimiter, retryJob);
 
 // Get complete job information
 router.get("/:id", verifyJWT, getCompleteJobInfo);
