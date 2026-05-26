@@ -33,12 +33,10 @@ export const validateUserUpdateData = (
   const hasPasswordUpdate = new_password && new_password.trim().length > 0;
 
   if (!hasFirstName && !hasLastName && !hasPasswordUpdate) {
-    return res.status(422).json({
-      success: false,
-      message:
-        "At least one field (first_name, last_name, or new_password) must be provided to update",
-      data: null,
-    });
+    throw new ApiError(
+      422,
+      "At least one field (first_name, last_name, or new_password) must be provided to update",
+    );
   }
 
   // If new_password is provided, current_password must also be provided
@@ -46,11 +44,7 @@ export const validateUserUpdateData = (
     hasPasswordUpdate &&
     (!current_password || current_password.trim().length === 0)
   ) {
-    return res.status(422).json({
-      success: false,
-      message: "Current password is required to update password",
-      data: null,
-    });
+    throw new ApiError(422, "Current password is required to update password");
   }
 
   next();
