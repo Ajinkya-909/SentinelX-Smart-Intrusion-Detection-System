@@ -4,55 +4,76 @@
 
 @layer base {
   :root {
-    --background: 30 6% 10%;
-    --foreground: 40 20% 90%;
+    /* Typography - changeable via CSS variables */
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-    --card: 30 6% 13%;
-    --card-foreground: 40 20% 90%;
+    /* Base Colors - Dark Theme */
+    --background: 210 15% 5%;
+    --foreground: 210 10% 92%;
 
-    --popover: 30 6% 13%;
-    --popover-foreground: 40 20% 90%;
+    --card: 210 20% 10%;
+    --card-foreground: 210 10% 92%;
 
-    --primary: 40 90% 50%;
-    --primary-foreground: 30 6% 10%;
+    --popover: 210 20% 10%;
+    --popover-foreground: 210 10% 92%;
 
-    --secondary: 30 6% 18%;
-    --secondary-foreground: 40 20% 85%;
+    /* Primary - Neon Lime Green (Main accent) */
+    --primary: 84 100% 52%;
+    --primary-foreground: 210 15% 5%;
 
-    --muted: 30 5% 20%;
-    --muted-foreground: 30 10% 55%;
+    /* Secondary - Dark Blue-Gray */
+    --secondary: 210 30% 16%;
+    --secondary-foreground: 210 10% 88%;
 
-    --accent: 30 80% 50%;
-    --accent-foreground: 30 6% 10%;
+    /* Muted - Subtle accents */
+    --muted: 210 15% 25%;
+    --muted-foreground: 210 10% 60%;
 
-    --destructive: 0 72% 51%;
+    /* Accent - Cyan/Blue for secondary highlights */
+    --accent: 188 100% 45%;
+    --accent-foreground: 210 15% 5%;
+
+    /* Destructive - Red for errors/critical */
+    --destructive: 0 91% 56%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 30 5% 22%;
-    --input: 30 5% 22%;
-    --ring: 40 90% 50%;
+    /* Border and Input */
+    --border: 210 20% 18%;
+    --input: 210 20% 18%;
+    --ring: 84 100% 52%;
 
-    --radius: 0.75rem;
+    --radius: 0.5rem;
 
-    --sidebar-background: 30 6% 8%;
-    --sidebar-foreground: 40 15% 75%;
-    --sidebar-primary: 40 90% 50%;
-    --sidebar-primary-foreground: 30 6% 10%;
-    --sidebar-accent: 30 6% 14%;
-    --sidebar-accent-foreground: 40 20% 90%;
-    --sidebar-border: 30 5% 18%;
-    --sidebar-ring: 40 90% 50%;
+    /* Sidebar specific */
+    --sidebar-background: 210 20% 8%;
+    --sidebar-foreground: 210 15% 75%;
+    --sidebar-primary: 84 100% 52%;
+    --sidebar-primary-foreground: 210 15% 5%;
+    --sidebar-accent: 210 20% 15%;
+    --sidebar-accent-foreground: 210 10% 90%;
+    --sidebar-border: 210 20% 14%;
+    --sidebar-ring: 84 100% 52%;
 
-    --critical: 0 72% 51%;
-    --high: 25 95% 53%;
-    --medium: 45 93% 47%;
-    --low: 142 71% 45%;
+    /* Severity Levels for Threat Intelligence */
+    --critical: 0 91% 56%;       /* Red - Critical/Severe threats */
+    --high: 25 95% 60%;          /* Orange - High priority */
+    --medium: 45 93% 57%;        /* Yellow - Medium/Warning */
+    --low: 142 71% 50%;          /* Green - Low/Resolved */
+    --info: 188 100% 50%;        /* Cyan - Information */
 
-    --chart-1: 40 90% 50%;
-    --chart-2: 25 95% 53%;
-    --chart-3: 0 72% 51%;
-    --chart-4: 142 71% 45%;
-    --chart-5: 30 80% 50%;
+    /* Chart colors for data visualization */
+    --chart-1: 84 100% 52%;      /* Lime - Primary data */
+    --chart-2: 188 100% 45%;     /* Cyan - Secondary data */
+    --chart-3: 0 91% 56%;        /* Red - Critical metrics */
+    --chart-4: 142 71% 50%;      /* Green - Success metrics */
+    --chart-5: 25 95% 60%;       /* Orange - Warning metrics */
+
+    /* Status indicators */
+    --status-online: 142 71% 50%;
+    --status-warning: 45 93% 57%;
+    --status-error: 0 91% 56%;
+    --status-processing: 188 100% 50%;
   }
 }
 
@@ -62,23 +83,56 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: var(--font-sans);
+  }
+  code {
+    font-family: var(--font-mono);
   }
 }
 
 @layer utilities {
-  .gradient-amber {
-    background: linear-gradient(135deg, hsl(40 90% 50%), hsl(25 95% 53%));
+  /* Gradient utilities */
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(84 100% 52%), hsl(188 100% 45%));
   }
   .gradient-card {
-    background: linear-gradient(145deg, hsl(30 6% 14%), hsl(30 6% 11%));
+    background: linear-gradient(145deg, hsl(210 20% 12%), hsl(210 20% 9%));
   }
-  .text-gradient-amber {
-    background: linear-gradient(135deg, hsl(40 90% 50%), hsl(25 95% 53%));
+  .text-gradient-primary {
+    background: linear-gradient(135deg, hsl(84 100% 52%), hsl(188 100% 45%));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
-  .glow-amber {
-    box-shadow: 0 0 20px hsl(40 90% 50% / 0.15);
+  
+  /* Subtle glow effects - reduced intensity */
+  .glow-primary {
+    box-shadow: 0 0 6px hsl(84 100% 52% / 0.15);
+  }
+  .glow-danger {
+    box-shadow: 0 0 6px hsl(0 91% 56% / 0.15);
+  }
+  .glow-info {
+    box-shadow: 0 0 6px hsl(188 100% 50% / 0.15);
+  }
+  
+  /* Glass morphism effect - subtle */
+  .glass {
+    background: rgba(210, 180, 140, 0.03);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  
+  /* Severity badges - refined */
+  .badge-critical {
+    @apply bg-critical text-white px-3 py-1 rounded-full text-xs font-semibold;
+  }
+  .badge-high {
+    @apply bg-high text-white px-3 py-1 rounded-full text-xs font-semibold;
+  }
+  .badge-medium {
+    @apply bg-medium text-white px-3 py-1 rounded-full text-xs font-semibold;
+  }
+  .badge-low {
+    @apply bg-low text-white px-3 py-1 rounded-full text-xs font-semibold;
   }
 }
