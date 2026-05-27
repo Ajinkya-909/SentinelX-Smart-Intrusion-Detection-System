@@ -16,23 +16,26 @@ interface SeverityLevel {
 
 const Home = () => {
   // Color definitions for proper rendering
-  const colorValues = {
-    primary: "hsl(84 100% 52%)",
-    accent: "hsl(188 100% 45%)",
-    destructive: "hsl(0 91% 56%)",
-    critical: "hsl(0 91% 56%)",
-    high: "hsl(25 95% 60%)",
-    medium: "hsl(45 93% 57%)",
-    low: "hsl(142 71% 50%)",
-    info: "hsl(188 100% 50%)",
-    card: "hsl(210 20% 10%)",
-    secondary: "hsl(210 30% 16%)",
-    muted: "hsl(210 15% 25%)",
-    statusOnline: "hsl(142 71% 50%)",
-    statusWarning: "hsl(45 93% 57%)",
-    statusError: "hsl(0 91% 56%)",
-    statusProcessing: "hsl(188 100% 50%)",
-  };
+const colorValues = {
+  primary: "hsl(84 100% 52%)",
+  accent: "hsl(188 100% 45%)",
+  destructive: "hsl(0 91% 56%)",
+  critical: "hsl(0 91% 56%)",
+  high: "hsl(25 95% 60%)",
+  medium: "hsl(45 93% 57%)",
+  low: "hsl(142 71% 50%)",
+  info: "hsl(188 100% 50%)",
+
+  // refined dark surfaces
+  card: "hsl(210 18% 8%)",
+  secondary: "hsl(210 16% 6%)",
+  muted: "hsl(210 12% 14%)",
+
+  statusOnline: "hsl(142 71% 50%)",
+  statusWarning: "hsl(45 93% 57%)",
+  statusError: "hsl(0 91% 56%)",
+  statusProcessing: "hsl(188 100% 50%)",
+};
   const primaryColors: ColorSwatch[] = [
     {
       name: "Primary (Lime Green)",
@@ -54,38 +57,6 @@ const Home = () => {
     },
   ];
 
-  const severityLevels: SeverityLevel[] = [
-    {
-      level: "Critical",
-      color: "bg-critical",
-      cssVar: "--critical",
-      description: "Immediate action required - System down, critical breach",
-    },
-    {
-      level: "High",
-      color: "bg-high",
-      cssVar: "--high",
-      description: "High priority - Significant threat detected",
-    },
-    {
-      level: "Medium",
-      color: "bg-medium",
-      cssVar: "--medium",
-      description: "Warning - Potential threat, requires attention",
-    },
-    {
-      level: "Low",
-      color: "bg-low",
-      cssVar: "--low",
-      description: "Informational - Minor issues, routine alerts",
-    },
-    {
-      level: "Info",
-      color: "bg-info",
-      cssVar: "--info",
-      description: "Processing - Active scans, data flowing",
-    },
-  ];
 
   const statusIndicators = [
     {
@@ -281,44 +252,6 @@ const Home = () => {
           >
             Severity Levels
           </h2>
-          <div className="space-y-3">
-            {severityLevels.map((severity) => {
-              const severityColorMap: Record<string, string> = {
-                Critical: colorValues.critical,
-                High: colorValues.high,
-                Medium: colorValues.medium,
-                Low: colorValues.low,
-                Info: colorValues.info,
-              };
-              return (
-                <div
-                  key={severity.level}
-                  className="p-5 rounded-lg flex items-start gap-4 text-white border border-white border-opacity-10"
-                  style={{
-                    backgroundColor: severityColorMap[severity.level] + "20",
-                  }}
-                >
-                  <div
-                    className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
-                    style={{
-                      backgroundColor: severityColorMap[severity.level] + "40",
-                    }}
-                  >
-                    <span className="text-lg font-bold">!</span>
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold text-base">{severity.level}</p>
-                    <p className="text-sm opacity-90 mt-1">
-                      {severity.description}
-                    </p>
-                    <p className="text-xs opacity-75 font-mono mt-2">
-                      {severity.cssVar}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         </section>
 
         {/* Status Indicators */}
