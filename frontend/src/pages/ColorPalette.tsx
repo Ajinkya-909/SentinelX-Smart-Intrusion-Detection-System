@@ -14,7 +14,7 @@ interface SeverityLevel {
   description: string;
 }
 
-const Home = () => {
+const ColorPalette = () => {
   // Color definitions for proper rendering
 const colorValues = {
   primary: "hsl(84 100% 52%)",
@@ -471,4 +471,4 @@ const colorValues = {
   );
 };
 
-export default Home;
+export default ColorPalette;
