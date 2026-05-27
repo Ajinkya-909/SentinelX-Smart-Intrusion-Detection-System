@@ -40,39 +40,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
    * Initialize auth state on mount
    * Check if user is already logged in via stored token
    */
-  useEffect(() => {
+useEffect(() => {
     const initializeAuth = async () => {
-      try {
-        // Check if we have a stored token
-        const token = authService.getAuthToken();
-        const storedUser = authService.getUser();
+      const token = authService.getAuthToken();
+      const storedUser = authService.getUser();
 
-        if (token && storedUser) {
-          setUser(storedUser);
+      // 1. If we have a token and user, set them immediately
+      if (token && storedUser) {
+        setUser(storedUser);
+        setIsLoading(false); // <-- STOP LOADING IMMEDIATELY
 
-          // Optionally validate token by fetching current user
-          try {
-            const response = await authService.getCurrentUser();
-            if (response.success) {
-              setUser(response.data);
-              authService.setUser(response.data);
-            }
-          } catch (err) {
-            // Token might be invalid, clear it
-            authService.clearAuthToken();
-            setUser(null);
+        // 2. Fetch fresh data silently in the background
+        try {
+          const response = await authService.getCurrentUser();
+          if (response.success) {
+            setUser(response.data);
+            authService.setUser(response.data);
           }
+        } catch (err) {
+          // If the background check fails (e.g., token expired), log them out
+          authService.clearAuthToken();
+          setUser(null);
         }
-      } catch (err) {
-        console.error("Error initializing auth:", err);
-      } finally {
+      } else {
+        // No local data, stop loading
         setIsLoading(false);
       }
     };
 
     initializeAuth();
   }, []);
-
   /**
    * Handle user signup
    */
