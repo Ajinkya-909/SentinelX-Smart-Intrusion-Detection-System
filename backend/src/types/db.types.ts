@@ -122,6 +122,7 @@ export interface Job {
   user_id: string; // Foreign key to users table
   file_path: string; // File storage path (disk/cloud)
   file_name: string; // Original uploaded file name
+  job_name: string | null; // Custom job name provided by user (optional)
   file_size: bigint; // File size in bytes
   status: JobStatusEnum; // Current lifecycle status
   last_completed_stage: JobStageEnum | null; // Last successfully completed stage

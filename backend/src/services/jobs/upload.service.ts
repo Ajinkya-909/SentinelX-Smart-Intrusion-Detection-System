@@ -9,17 +9,24 @@ const uploadService = {
   async uploadAndCreateJob(
     file: Express.Multer.File,
     userId: string,
+    jobName?: string,
   ): Promise<Job> {
     const savedFile = await fileService.checkFile(file);
 
     let job: Job;
     try {
-      job = await jobService.createJob({
+      const jobData: JobUploadRequest = {
         user_id: userId,
         file_path: savedFile.path,
         file_name: savedFile.originalName,
         file_size: BigInt(savedFile.size),
-      });
+      };
+
+      if (jobName) {
+        jobData.job_name = jobName;
+      }
+
+      job = await jobService.createJob(jobData);
     } catch (error) {
       try {
         await fileService.deleteFile(savedFile.path);

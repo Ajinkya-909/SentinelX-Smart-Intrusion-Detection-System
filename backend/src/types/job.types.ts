@@ -36,6 +36,7 @@ export interface JobUploadRequest {
   file_name: string; // Original filename
   file_size: bigint; // File size in bytes
   user_id: string; // User who uploaded
+  job_name?: string | undefined; // Custom job name provided by user
 }
 
 /**

@@ -33,10 +33,6 @@ export const jobLimiter = rateLimit({
     "Too many job requests. You can request a maximum of 2 jobs per minute. Please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: Request) => {
-    // Use user ID from JWT token for per-user rate limiting
-    return req.user?.id || req.ip || "anonymous";
-  },
   skip: (req: Request) => {
     // Skip rate limiting if user is not authenticated
     return !req.user;

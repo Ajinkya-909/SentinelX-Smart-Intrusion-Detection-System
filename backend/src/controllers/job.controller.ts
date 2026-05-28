@@ -17,12 +17,13 @@ import { prisma } from "@/config/db";
 export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const file = req.file;
+  const jobName = (req as any).jobName;
 
   if (!file) {
     throw new ApiError(400, UPLOAD_ERRORS.NO_FILE);
   }
 
-  const job = await uploadService.uploadAndCreateJob(file, userId);
+  const job = await uploadService.uploadAndCreateJob(file, userId, jobName);
 
   return res.status(201).json(
     new ApiResponse(
@@ -30,6 +31,7 @@ export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
       {
         job_id: job.id,
         status: job.status,
+        job_name: job.job_name,
         file_name: job.file_name,
         file_size: Number(job.file_size),
         created_at: job.created_at,
@@ -64,6 +66,7 @@ export const getJobStatus = asyncHandler(
 
     const response: any = {
       jobId: job.id,
+      jobName: job.job_name,
       status: job.status,
       currentStage,
       progress,
@@ -134,6 +137,7 @@ export const reanalyzeJob = asyncHandler(
         202,
         {
           jobId,
+          jobName: job.job_name,
           status: "REPROCESSING",
           message: "Job re-enqueued for analysis from normalized logs",
         },
@@ -164,6 +168,7 @@ export const listUserJobs = asyncHandler(
     // Transform the response to match API spec
     const formattedJobs = response.jobs.map((job) => ({
       jobId: job.id,
+      jobName: job.job_name,
       fileName: job.file_name,
       status: job.status,
       severity: job.status === JobStatusEnum.COMPLETED ? "HIGH" : undefined,
@@ -224,6 +229,8 @@ export const getJobResults = asyncHandler(
         new ApiResponse(
           200,
           {
+            jobId,
+            jobName: job.job_name,
             status: "PROCESSING",
             message: "Results not ready yet",
             progress: job.progress || 0,
@@ -239,6 +246,8 @@ export const getJobResults = asyncHandler(
         new ApiResponse(
           200,
           {
+            jobId,
+            jobName: job.job_name,
             status: "FAILED",
             error: job.error_message || "Analysis failed",
           },
@@ -253,7 +262,11 @@ export const getJobResults = asyncHandler(
     return res
       .status(200)
       .json(
-        new ApiResponse(200, results, "Job results retrieved successfully"),
+        new ApiResponse(
+          200,
+          { jobId, jobName: job.job_name, ...results },
+          "Job results retrieved successfully",
+        ),
       );
   },
 );
@@ -296,7 +309,7 @@ export const deleteJobEndpoint = asyncHandler(
       .json(
         new ApiResponse(
           200,
-          { jobId, message: "Job deleted successfully" },
+          { jobId, jobName: job.job_name, message: "Job deleted successfully" },
           "Job and associated data deleted",
         ),
       );
@@ -356,6 +369,7 @@ export const retryJob = asyncHandler(async (req: Request, res: Response) => {
       202,
       {
         jobId,
+        jobName: resetJob.job_name,
         status: "UPLOADED",
         message: "Job reset to initial state and re-queued for processing",
       },
@@ -394,6 +408,7 @@ export const getCompleteJobInfo = asyncHandler(
     const jobInfo = {
       id: job.id,
       user_id: job.user_id,
+      job_name: job.job_name,
       file_name: job.file_name,
       file_size: Number(job.file_size),
       status: job.status,
@@ -451,6 +466,8 @@ export const getJobInsights = asyncHandler(
         new ApiResponse(
           200,
           {
+            jobId,
+            jobName: job.job_name,
             status: "PROCESSING",
             message: "Insights not ready yet",
             progress: job.progress || 0,
@@ -467,6 +484,8 @@ export const getJobInsights = asyncHandler(
         new ApiResponse(
           200,
           {
+            jobId,
+            jobName: job.job_name,
             status: "FAILED",
             error: job.error_message || "Analysis failed",
             insights: [],
@@ -488,7 +507,7 @@ export const getJobInsights = asyncHandler(
       .json(
         new ApiResponse(
           200,
-          insightsResult,
+          { jobId, jobName: job.job_name, ...insightsResult },
           "Job insights retrieved successfully",
         ),
       );
@@ -532,6 +551,8 @@ export const getJobFindings = asyncHandler(
         new ApiResponse(
           200,
           {
+            jobId,
+            jobName: job.job_name,
             status: "PROCESSING",
             message: "Findings not ready yet",
             progress: job.progress || 0,
@@ -548,6 +569,8 @@ export const getJobFindings = asyncHandler(
         new ApiResponse(
           200,
           {
+            jobId,
+            jobName: job.job_name,
             status: "FAILED",
             error: job.error_message || "Analysis failed",
             findings: [],
@@ -569,7 +592,7 @@ export const getJobFindings = asyncHandler(
       .json(
         new ApiResponse(
           200,
-          findingsResult,
+          { jobId, jobName: job.job_name, ...findingsResult },
           "Job findings retrieved successfully",
         ),
       );

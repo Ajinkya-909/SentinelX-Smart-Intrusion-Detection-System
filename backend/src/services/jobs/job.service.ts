@@ -15,7 +15,7 @@ import { ApiError } from "@/utils/api-error";
 
 const jobService = {
   async createJob(input: JobUploadRequest): Promise<Job> {
-    const { user_id, file_path, file_size, file_name } = input;
+    const { user_id, file_path, file_size, file_name, job_name } = input;
 
     const existingUser = await userRepository.findById(user_id);
     if (!existingUser) {
@@ -35,6 +35,7 @@ const jobService = {
       file_name,
       file_path,
       file_size,
+      job_name,
     });
 
     return job;

@@ -25,6 +25,7 @@ const jobRepository = {
         file_name: input.file_name,
         file_path: input.file_path,
         file_size: input.file_size,
+        job_name: input.job_name || null,
       },
     });
     return job as Job;

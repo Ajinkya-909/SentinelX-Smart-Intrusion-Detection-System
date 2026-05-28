@@ -93,6 +93,7 @@ model jobs {
   user_id              String              @db.Uuid
   file_path            String
   file_name            String
+  job_name             String?             @db.VarChar(255)
   file_size            BigInt
   status               job_status_enum     @default(UPLOADED)
   last_completed_stage job_stage_enum?
