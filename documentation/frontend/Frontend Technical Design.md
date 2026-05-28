@@ -77,7 +77,7 @@ The application relies on a high-contrast, immersive dark mode to reduce eye str
 
 #### 1. Main Dashboard
 
-* **Route:** `/app/dashboard`
+* **Route:** `/dashboard`
 * **Purpose:** The immediate landing zone post-login. Provides a high-level summary.
 * **UI Components:** * "Welcome back, [Name]" header.
 * KPI Cards: "Total Jobs Analyzed", "Recent Critical Threats".
@@ -91,20 +91,20 @@ The application relies on a high-contrast, immersive dark mode to reduce eye str
 
 #### 2. Jobs List
 
-* **Route:** `/app/jobs`
+* **Route:** `/jobs`
 * **Purpose:** The central hub to view all historical and current log analysis jobs.
 * **UI Components:**
 * Data Table or Grid of Cards displaying: `fileName`, `status`, `severity`, and `createdAt`.
 * Pagination controls (Next/Previous).
-* Global "New Analysis" button routing to `/app/jobs/upload`.
+* Global "New Analysis" button routing to `/jobs/upload`.
 
 
 * **API Calls:** * `GET /jobs?limit={limit}&offset={offset}`
-* **Interaction:** Clicking a row/card pushes the router to `/app/jobs/:id`.
+* **Interaction:** Clicking a row/card pushes the router to `/jobs/:id`.
 
 #### 3. Upload & Initialization
 
-* **Route:** `/app/jobs/upload`
+* **Route:** `/jobs/upload`
 * **Purpose:** Intake for raw system logs.
 * **UI Components:**
 * Drag-and-drop file zone with `.txt`, `.log`, `.csv` constraints.
@@ -112,11 +112,11 @@ The application relies on a high-contrast, immersive dark mode to reduce eye str
 
 
 * **API Calls:** * `POST /jobs/upload` (Multipart form-data)
-* **Interaction:** On successful `201 Created`, immediately redirect to `/app/jobs/{job_id}`.
+* **Interaction:** On successful `201 Created`, immediately redirect to `/jobs/{job_id}`.
 
 #### 4. The Dynamic Job Controller (Status & Details)
 
-* **Route:** `/app/jobs/:id`
+* **Route:** `/jobs/:id`
 * **Purpose:** The single source of truth for a specific job. The UI heavily mutates based on the backend `status`.
 * **API Calls:**
 * `GET /jobs/:id` (Fetch full job data)
@@ -126,7 +126,7 @@ The application relies on a high-contrast, immersive dark mode to reduce eye str
 * **Dynamic UI States:**
 * **State A: `status === 'PROCESSING'**`
 * UI: A large horizontal stepper (Uploaded → Normalizing → Analyzing → Insights).
-* Action: The UI polls the status endpoint. No interaction allowed except returning to `/app/jobs`.
+* Action: The UI polls the status endpoint. No interaction allowed except returning to `/jobs`.
 
 
 * **State B: `status === 'FAILED'**`
@@ -140,7 +140,7 @@ The application relies on a high-contrast, immersive dark mode to reduce eye str
 1. "Download Raw Log" -> Calls `GET /jobs/:id/file`
 2. "Delete Job" -> Calls `DELETE /jobs/:id`
 3. "Reanalyze" -> Calls `POST /jobs/:id/reanalyze` (if rules updated)
-4. **Primary Action:** A glowing Amber button labeled "Access Security Report" -> Routes to `/app/jobs/:id/report`.
+4. **Primary Action:** A glowing Amber button labeled "Access Security Report" -> Routes to `/jobs/:id/report`.
 
 
 
@@ -150,7 +150,7 @@ The application relies on a high-contrast, immersive dark mode to reduce eye str
 
 #### 5. The Threat Intelligence Report (Insights Dashboard)
 
-* **Route:** `/app/jobs/:id/report`
+* **Route:** `/jobs/:id/report`
 * **Purpose:** The "Cool" Dashboard. Dense data visualization for a completed job.
 * **UI Layout:** A tabbed interface or vertically scrollable sections to prevent cognitive overload.
 * **Section 1: Executive Summary**

@@ -15,6 +15,7 @@ import Dashboard from "./pages/Dashboard";
 import Jobs from "./pages/Jobs";
 import Settings from "./pages/Settings";
 import ColorPalette from "./pages/ColorPalette";
+import JobDetail from "./pages/JobDetail";
 
 const queryClient = new QueryClient();
 
@@ -70,6 +71,17 @@ const App = () => (
                 <ProtectedRoute>
                   <DashboardLayout>
                     <Jobs />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/jobs/:id"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <JobDetail />
                   </DashboardLayout>
                 </ProtectedRoute>
               }

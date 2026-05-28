@@ -10,12 +10,12 @@ datasource db {
 model analyzer_findings {
   id                String                    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   job_id            String                    @db.Uuid
-  fingerprint       String                    @unique // Hash for deduplication
+  fingerprint       String                    @unique
   analyzer          String                    @db.VarChar(100)
   analyzer_version  String?                   @db.VarChar(20)
   finding_type      String                    @db.VarChar(100)
   category          String?                   @db.VarChar(100)
-  severity          analyzer_finding_severity // CRITICAL, HIGH, MEDIUM, LOW, INFO
+  severity          analyzer_finding_severity
   confidence        Float?
   title             String?
   summary           String?
@@ -24,7 +24,7 @@ model analyzer_findings {
   affected_entities Json?
   evidence          Json?
   metadata          Json?
-  status            analyzer_finding_status   @default(ACTIVE) // ACTIVE, RESOLVED, DISMISSED, DUPLICATE
+  status            analyzer_finding_status   @default(ACTIVE)
   detected_at       DateTime?                 @default(now()) @db.Timestamp(6)
   created_at        DateTime?                 @default(now()) @db.Timestamp(6)
   updated_at        DateTime?                 @default(now()) @updatedAt @db.Timestamp(6)
@@ -41,46 +41,26 @@ model analyzer_findings {
 }
 
 model insights {
-  id     String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  job_id String @db.Uuid
-
-  // Insight identity
-  insight_type insight_type
-
-  // Display metadata
-  title       String? @db.VarChar(255)
-  description String?
-
-  // Severity / priority
-  severity         insight_severity?
-  priority_score   Float?
-  confidence_score Float?
-
-  // Main frontend payload
-  data Json
-
-  // AI metadata
+  id                 String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  job_id             String            @db.Uuid
+  insight_type       insight_type
+  title              String?           @db.VarChar(255)
+  description        String?
+  severity           insight_severity?
+  priority_score     Float?
+  confidence_score   Float?
+  data               Json
   generated_by       insight_generator @default(LLM)
   model_name         String?           @db.VarChar(100)
   generation_version String?           @db.VarChar(50)
-
-  // Traceability
-  finding_references Json? // References to analyzer_findings
-  log_references     Json? // References to normalized_logs
-
-  // Rendering / state
-  is_visible    Boolean @default(true)
-  display_order Int?
-
-  // Metadata
-  metadata Json?
-
-  // Timestamps
-  created_at DateTime? @default(now()) @db.Timestamp(6)
-  updated_at DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-
-  // Relations
-  jobs jobs @relation(fields: [job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  finding_references Json?
+  log_references     Json?
+  is_visible         Boolean           @default(true)
+  display_order      Int?
+  metadata           Json?
+  created_at         DateTime?         @default(now()) @db.Timestamp(6)
+  updated_at         DateTime?         @default(now()) @updatedAt @db.Timestamp(6)
+  jobs               jobs              @relation(fields: [job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([job_id], map: "idx_insights_job_id")
   @@index([insight_type], map: "idx_insights_insight_type")
@@ -93,7 +73,6 @@ model jobs {
   user_id              String              @db.Uuid
   file_path            String
   file_name            String
-  job_name             String?             @db.VarChar(255)
   file_size            BigInt
   status               job_status_enum     @default(UPLOADED)
   last_completed_stage job_stage_enum?
@@ -105,6 +84,7 @@ model jobs {
   created_at           DateTime?           @default(now()) @db.Timestamp(6)
   updated_at           DateTime?           @default(now()) @db.Timestamp(6)
   deleted_at           DateTime?           @db.Timestamp(6)
+  job_name             String?             @db.VarChar(255)
   analyzer_findings    analyzer_findings[]
   insights             insights[]
   users                users               @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -183,10 +163,7 @@ enum analyzer_finding_status {
   DUPLICATE
 }
 
-// ===== INSIGHTS ENUMS =====
-
 enum insight_type {
-  // Mandatory core types
   OVERVIEW
   KPI
   ALERT
@@ -196,8 +173,6 @@ enum insight_type {
   THREAT_TIMELINE
   TOP_ATTACKERS
   RECOMMENDATION
-
-  // Optional/Advanced types
   ATTACK_PATTERN
   PORT_SCAN_PATTERN
   FAILED_LOGIN_ANALYSIS

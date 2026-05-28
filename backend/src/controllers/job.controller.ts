@@ -417,6 +417,7 @@ export const getCompleteJobInfo = asyncHandler(
       outcome: job.outcome || null,
       error_message: job.error_message || null,
       retry_count: job.retry_count || 0,
+      processing_metadata: job.processing_metadata || null,
       created_at: job.created_at,
       updated_at: job.updated_at,
     };
