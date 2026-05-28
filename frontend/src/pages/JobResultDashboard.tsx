@@ -70,69 +70,148 @@ export default function JobResultDashboard() {
     );
   }
 
-  return (
-    <div className="min-h-screen text-foreground space-y-6 pb-12">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border pb-4">
-        <div className="flex items-center space-x-4">
-          <button onClick={() => navigate(`/jobs`)} className="p-2 hover:bg-muted rounded-full transition-colors">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold uppercase tracking-wide">
-              Intel Report <span className="text-primary">#{id?.split("-")[0]}</span>
-            </h1>
-            <p className="text-sm text-muted-foreground font-mono">CLASSIFICATION: CONFIDENTIAL // SENTINELX IDS</p>
-          </div>
-        </div>
-      </div>
+return (
+  <div className="min-h-screen text-foreground space-y-5 pb-10 max-w-[1600px] mx-auto">
+    {/* Header */}
+    <div className="flex items-center justify-between border-b border-border pb-4">
+      <div className="flex items-center space-x-4">
+        <button
+          onClick={() => navigate(`/jobs`)}
+          className="p-2 hover:bg-muted rounded-full transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
 
-      {/* TOP ROW: KPIs */}
-      {getInsightData("KPI") && <KpiMetricGrid data={getInsightData("KPI")} />}
+        <div>
+          <h1 className="text-[1.65rem] font-bold uppercase tracking-wide">
+            Intel Report{' '}
+            <span className="text-primary">
+              #{id?.split('-')[0]}
+            </span>
+          </h1>
 
-      {/* BAND 1: Logs & Table (8/12 + 4/12) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[400px]">
-        <div className="lg:col-span-8 h-full">
-          {getInsightData("ACTIVITY_TIMELINE") && <ActivityTimelineChart data={getInsightData("ACTIVITY_TIMELINE")} />}
-        </div>
-        <div className="lg:col-span-4 h-full">
-          {getInsightData("TOP_ATTACKERS") && <TopAttackersTable data={getInsightData("TOP_ATTACKERS")} />}
-        </div>
-      </div>
-
-      {/* BAND 2: Tri-Chart Analytics (4/12 + 4/12 + 4/12) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div>{getInsightData("EVENT_TYPE_DISTRIBUTION") && <EventTypeRadarChart data={getInsightData("EVENT_TYPE_DISTRIBUTION")} />}</div>
-        <div>{getInsightData("SEVERITY_DISTRIBUTION") && <SeverityDonutChart data={getInsightData("SEVERITY_DISTRIBUTION")} />}</div>
-        <div>{getInsightData("ATTACK_PATTERN") && <AttackPatternCard data={getInsightData("ATTACK_PATTERN")} />}</div>
-      </div>
-
-      {/* BAND 3: Threat Timeline & Alerts (8/12 + 4/12) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[400px]">
-        <div className="lg:col-span-8 h-full">
-          {getInsightData("THREAT_TIMELINE") && <ThreatTimelineChart data={getInsightData("THREAT_TIMELINE")} />}
-        </div>
-        <div className="lg:col-span-4 h-full">
-          {getInsightData("ALERT") && <SecurityAlertFeed data={getInsightData("ALERT")} />}
-        </div>
-      </div>
-
-      {/* BAND 4: AI Intelligence Row (4/12 + 4/12 + 4/12) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div>{getInsightData("OVERVIEW") && <ExecutiveSummaryCard data={getInsightData("OVERVIEW")} />}</div>
-        <div>{getInsightData("THREAT_SUMMARY") && <ThreatSummaryCard data={getInsightData("THREAT_SUMMARY")} />}</div>
-        <div>{getInsightData("ANOMALY_SUMMARY") && <AnomalySummaryCard data={getInsightData("ANOMALY_SUMMARY")} />}</div>
-      </div>
-
-      {/* BAND 5: Remediation & Geo Map (4/12 + 8/12) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[450px]">
-        <div className="lg:col-span-4 h-full">
-          {getInsightData("RECOMMENDATION") && <ActionPlanRemediationList data={getInsightData("RECOMMENDATION")} />}
-        </div>
-        <div className="lg:col-span-8 h-full">
-          {getInsightData("GEO_ANALYSIS") && <GeoAnalysisMap data={getInsightData("GEO_ANALYSIS")} />}
+          <p className="text-xs text-muted-foreground font-mono tracking-wide">
+            CLASSIFICATION: CONFIDENTIAL // SENTINELX IDS
+          </p>
         </div>
       </div>
     </div>
-  );
+
+    {/* TOP ROW: KPIs */}
+    {getInsightData('KPI') && (
+      <KpiMetricGrid data={getInsightData('KPI')} />
+    )}
+
+    {/* BAND 1 */}
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-5 md:h-[360px] h-[380px]">
+      <div className="lg:col-span-8 h-full">
+        {getInsightData('ACTIVITY_TIMELINE') && (
+          <ActivityTimelineChart
+            data={getInsightData('ACTIVITY_TIMELINE')}
+          />
+        )}
+      </div>
+
+      <div className="lg:col-span-4 h-full">
+        {getInsightData('TOP_ATTACKERS') && (
+          <TopAttackersTable
+            data={getInsightData('TOP_ATTACKERS')}
+          />
+        )}
+      </div>
+    </div>
+
+    {/* BAND 2 */}
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="scale-[0.985] origin-center">
+        {getInsightData('EVENT_TYPE_DISTRIBUTION') && (
+          <EventTypeRadarChart
+            data={getInsightData('EVENT_TYPE_DISTRIBUTION')}
+          />
+        )}
+      </div>
+
+      <div className="scale-[0.985] origin-center">
+        {getInsightData('SEVERITY_DISTRIBUTION') && (
+          <SeverityDonutChart
+            data={getInsightData('SEVERITY_DISTRIBUTION')}
+          />
+        )}
+      </div>
+
+      <div className="scale-[0.985] origin-center">
+        {getInsightData('ATTACK_PATTERN') && (
+          <AttackPatternCard
+            data={getInsightData('ATTACK_PATTERN')}
+          />
+        )}
+      </div>
+    </div>
+
+    {/* BAND 3 */}
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 md:h-[360px] h-[380px]">
+      <div className="lg:col-span-8 h-full">
+        {getInsightData('THREAT_TIMELINE') && (
+          <ThreatTimelineChart
+            data={getInsightData('THREAT_TIMELINE')}
+          />
+        )}
+      </div>
+
+      <div className="lg:col-span-4 h-full">
+        {getInsightData('ALERT') && (
+          <SecurityAlertFeed
+            data={getInsightData('ALERT')}
+          />
+        )}
+      </div>
+    </div>
+
+    {/* BAND 4 */}
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="scale-[0.985] origin-center">
+        {getInsightData('OVERVIEW') && (
+          <ExecutiveSummaryCard
+            data={getInsightData('OVERVIEW')}
+          />
+        )}
+      </div>
+
+      <div className="scale-[0.985] origin-center">
+        {getInsightData('THREAT_SUMMARY') && (
+          <ThreatSummaryCard
+            data={getInsightData('THREAT_SUMMARY')}
+          />
+        )}
+      </div>
+
+      <div className="scale-[0.985] origin-center">
+        {getInsightData('ANOMALY_SUMMARY') && (
+          <AnomalySummaryCard
+            data={getInsightData('ANOMALY_SUMMARY')}
+          />
+        )}
+      </div>
+    </div>
+
+    {/* BAND 5 */}
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 md:h-[400px] h-[430px]">
+      <div className="lg:col-span-4 h-full">
+        {getInsightData('RECOMMENDATION') && (
+          <ActionPlanRemediationList
+            data={getInsightData('RECOMMENDATION')}
+          />
+        )}
+      </div>
+
+      <div className="lg:col-span-8 h-full">
+        {getInsightData('GEO_ANALYSIS') && (
+          <GeoAnalysisMap
+            data={getInsightData('GEO_ANALYSIS')}
+          />
+        )}
+      </div>
+    </div>
+  </div>
+);
 }

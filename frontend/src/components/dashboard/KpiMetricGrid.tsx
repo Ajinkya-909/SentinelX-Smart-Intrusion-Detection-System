@@ -1,6 +1,12 @@
 import React from 'react';
-import { Activity, AlertTriangle, Crosshair, ShieldAlert, Zap } from 'lucide-react';
-import { KPIInsightData } from '@/types/insight'; // Adjust path as needed
+import {
+  Activity,
+  AlertTriangle,
+  Crosshair,
+  ShieldAlert,
+  Zap,
+} from 'lucide-react';
+import { KPIInsightData } from '@/types/insight';
 
 interface KpiMetricGridProps {
   data: KPIInsightData;
@@ -8,19 +14,58 @@ interface KpiMetricGridProps {
 
 const getSeverityStyles = (severity?: string) => {
   switch (severity?.toUpperCase()) {
-    case 'CRITICAL': return 'text-red-500 shadow-red-500/20';
-    case 'HIGH': return 'text-orange-500 shadow-orange-500/20';
-    case 'MEDIUM': return 'text-yellow-500 shadow-yellow-500/20';
-    default: return 'text-blue-400 shadow-blue-500/20';
+    case 'CRITICAL':
+      return {
+        text: 'text-critical',
+        border: 'bg-critical',
+        icon: 'text-critical',
+        subtle: 'bg-critical/5',
+      };
+
+    case 'HIGH':
+      return {
+        text: 'text-high',
+        border: 'bg-high',
+        icon: 'text-high',
+        subtle: 'bg-high/5',
+      };
+
+    case 'MEDIUM':
+      return {
+        text: 'text-medium',
+        border: 'bg-medium',
+        icon: 'text-medium',
+        subtle: 'bg-medium/5',
+      };
+
+    default:
+      return {
+        text: 'text-primary',
+        border: 'bg-primary',
+        icon: 'text-primary',
+        subtle: 'bg-primary/5',
+      };
   }
 };
 
 const getIcon = (label: string, severity?: string) => {
-  if (severity === 'CRITICAL' || label.includes('Alert')) return <AlertTriangle className="w-5 h-5" />;
-  if (label.includes('Threat')) return <ShieldAlert className="w-5 h-5" />;
-  if (label.includes('Source') || label.includes('IP')) return <Crosshair className="w-5 h-5" />;
-  if (label.includes('Event')) return <Activity className="w-5 h-5" />;
-  return <Zap className="w-5 h-5" />;
+  if (severity === 'CRITICAL' || label.includes('Alert')) {
+    return <AlertTriangle className="w-4 h-4" />;
+  }
+
+  if (label.includes('Threat')) {
+    return <ShieldAlert className="w-4 h-4" />;
+  }
+
+  if (label.includes('Source') || label.includes('IP')) {
+    return <Crosshair className="w-4 h-4" />;
+  }
+
+  if (label.includes('Event')) {
+    return <Activity className="w-4 h-4" />;
+  }
+
+  return <Zap className="w-4 h-4" />;
 };
 
 export const KpiMetricGrid: React.FC<KpiMetricGridProps> = ({ data }) => {
@@ -29,21 +74,60 @@ export const KpiMetricGrid: React.FC<KpiMetricGridProps> = ({ data }) => {
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 w-full">
       {data.metrics.map((metric, idx) => {
-        const severityClass = getSeverityStyles(metric.severity);
-        
+        const severityStyles = getSeverityStyles(metric.severity);
+
         return (
-          <div 
-            key={idx} 
-            className="flex flex-col p-4 rounded-xl bg-[#121212] border border-gray-800 hover:border-gray-700 transition-colors shadow-lg"
+          <div
+            key={idx}
+            className={`
+              relative overflow-hidden
+              flex flex-col justify-between
+              min-h-[120px]
+              px-5 py-4
+              rounded-lg
+              bg-card
+              border border-border
+              gradient-card
+              transition-all duration-200
+              hover:border-primary/20
+              hover:translate-y-[-1px]
+            `}
           >
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-gray-400 tracking-wide">{metric.label}</span>
-              <div className={`${severityClass} opacity-80`}>
+            {/* Left Accent Line */}
+            <div
+              className={`
+                absolute left-2 top-3 bottom-3
+                w-[2px] rounded-full
+                ${severityStyles.border}
+              `}
+            />
+
+            {/* Subtle Background Glow */}
+            <div
+              className={`
+                absolute inset-0 opacity-[0.03]
+                ${severityStyles.subtle}
+                pointer-events-none
+              `}
+            />
+
+            <div className="relative flex justify-between items-start">
+              <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium leading-relaxed">
+                {metric.label}
+              </span>
+
+              <div className={`${severityStyles.icon} opacity-70`}>
                 {getIcon(metric.label, metric.severity)}
               </div>
             </div>
-            <div className="flex items-baseline space-x-2">
-              <h2 className={`text-3xl font-bold ${severityClass} drop-shadow-md`}>
+
+            <div className="relative mt-5">
+              <h2
+                className={`
+                  text-3xl font-bold tracking-tight
+                  ${severityStyles.text}
+                `}
+              >
                 {metric.value.toLocaleString()}
               </h2>
             </div>

@@ -80,12 +80,27 @@ export const useFetchJobDetail = (jobId: string): UseFetchJobDetailReturn => {
       // Update job status from polling response
       setJob((prevJob) => {
         if (!prevJob) return null;
+
         return {
           ...prevJob,
-          status: statusData.status,
-          progress: statusData.progress,
-          errorMessage: statusData.errorMessage,
-          lastCompletedStage: statusData.lastCompletedStage,
+
+          // Only overwrite if backend actually returned a value
+          status: statusData.status ?? prevJob.status,
+
+          progress:
+            statusData.progress !== undefined
+              ? statusData.progress
+              : prevJob.progress,
+
+          errorMessage:
+            statusData.errorMessage !== undefined
+              ? statusData.errorMessage
+              : prevJob.errorMessage,
+
+          lastCompletedStage:
+            statusData.lastCompletedStage !== undefined
+              ? statusData.lastCompletedStage
+              : prevJob.lastCompletedStage,
         };
       });
 

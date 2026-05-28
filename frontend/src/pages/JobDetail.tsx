@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertTriangle, Activity, Trash2, RotateCcw } from "lucide-react";
+import { AlertTriangle, Activity, Trash2, RotateCcw, Loader, Loader2 } from "lucide-react";
 import { useFetchJobDetail, useJobActions } from "@/hooks";
 import { Job } from "@/types/job";
 
@@ -38,7 +38,7 @@ export default function JobDetail() {
   if (isLoading) {
     return (
       <div className="flex h-[60vh] flex-col items-center justify-center text-muted-foreground gap-4 animate-fade-in">
-        <Activity className="w-8 h-8 animate-spin text-primary" />
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
         <p className="font-mono text-sm tracking-widest uppercase">Initializing Secure Connection...</p>
       </div>
     );
