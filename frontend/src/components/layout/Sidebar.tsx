@@ -16,6 +16,7 @@ import {
   Menu,
   X,
   Shield,
+  TerminalSquare,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -36,10 +37,16 @@ const Sidebar = () => {
       id: "dashboard",
     },
     {
-      label: "Upload Logs",
-      icon: Upload,
+      label: "Jobs",
+      icon: TerminalSquare,
       path: "/jobs",
       id: "jobs",
+    },
+    {
+      label: "Upload Job",
+      icon: Upload,
+      path: "/jobs/upload",
+      id: "upload",
     },
     {
       label: "Settings",
@@ -49,7 +56,19 @@ const Sidebar = () => {
     },
   ];
 
+  // Custom active state logic to fix the /jobs vs /jobs/upload bug
   const isActive = (path: string) => {
+    if (path === "/jobs") {
+      // Highlight "Jobs" if exactly on /jobs, OR on a specific job detail page (/jobs/123)
+      // BUT explicitly prevent it from highlighting on /jobs/upload
+      return (
+        location.pathname === "/jobs" ||
+        (location.pathname.startsWith("/jobs/") &&
+          !location.pathname.includes("/upload"))
+      );
+    }
+    
+    // For all other routes, require an exact match
     return location.pathname === path;
   };
 

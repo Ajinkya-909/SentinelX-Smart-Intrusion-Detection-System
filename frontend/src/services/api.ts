@@ -21,6 +21,53 @@ class ApiService {
   }
 
   /**
+   * POST request for FormData (File Uploads)
+   * We bypass the default request() method here because we MUST NOT set the
+   * Content-Type header manually. The browser needs to set it automatically
+   * to include the multipart boundary.
+   */
+  public async postForm<T>(
+    endpoint: string,
+    formData: FormData,
+    options?: RequestInit,
+  ): Promise<ApiResponse<T>> {
+    const url = `${this.baseURL}${endpoint}`;
+    const token = localStorage.getItem("authToken");
+
+    const headers: HeadersInit = {
+      ...options?.headers,
+    };
+
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        method: "POST",
+        headers, // Notice: No Content-Type defined
+        body: formData,
+        credentials: "include",
+      });
+
+      const data: ApiResponse<T> = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "File upload failed");
+      }
+
+      return data;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "An error occurred during upload";
+      throw new Error(errorMessage);
+    }
+  }
+
+  /**
    * Make HTTP request with automatic token handling
    */
   private async request<T>(

@@ -17,6 +17,7 @@ import Settings from "./pages/Settings";
 import ColorPalette from "./pages/ColorPalette";
 import JobDetail from "./pages/JobDetail";
 import JobResultDashboard from "./pages/JobResultDashboard";
+import JobUpload from "./pages/JobUpload";
 
 const queryClient = new QueryClient();
 
@@ -72,6 +73,17 @@ const App = () => (
                 <ProtectedRoute>
                   <DashboardLayout>
                     <Jobs />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/jobs/upload"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <JobUpload />
                   </DashboardLayout>
                 </ProtectedRoute>
               }

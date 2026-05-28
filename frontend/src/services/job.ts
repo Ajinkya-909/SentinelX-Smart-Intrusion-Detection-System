@@ -67,6 +67,46 @@ export const jobService = {
     const response = await api.post<Job>(`/jobs/${jobId}/reanalyze`);
     return response.data;
   },
+
+  /**
+   * Upload a new log file to initiate an analysis job
+   * @param file - The file object to upload
+   * @param jobName - Optional custom name for the job
+   * @returns - The newly created job metadata
+   */
+  async uploadJob(file: File, jobName?: string): Promise<Job> {
+    const formData = new FormData();
+    formData.append("file", file);
+    
+    if (jobName) {
+      formData.append("jobName", jobName);
+    }
+
+    // The backend returns snake_case fields (job_id, file_name, etc.)
+    // We map them to the camelCase Job interface expected by the frontend
+    interface UploadResponse {
+      job_id: string;
+      status: "UPLOADED" | "PROCESSING" | "COMPLETED" | "FAILED";
+      job_name?: string;
+      file_name: string;
+      file_size: number;
+      created_at: string;
+    }
+
+    const response = await api.postForm<UploadResponse>("/jobs/upload", formData);
+    
+    const backendData = response.data;
+    
+    // Map response to our frontend Job interface
+    return {
+      jobId: backendData.job_id,
+      status: backendData.status,
+      jobName: backendData.job_name,
+      fileName: backendData.file_name,
+      fileSize: backendData.file_size,
+      createdAt: backendData.created_at,
+    };
+  },
 };
 
 export default jobService;
