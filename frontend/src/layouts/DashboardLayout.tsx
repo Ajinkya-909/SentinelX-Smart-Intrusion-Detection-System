@@ -47,14 +47,18 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col lg:flex-row">
+    // FIX 1: Changed min-h-screen to h-screen and added overflow-hidden to lock the viewport
+    <div className="h-screen w-full overflow-hidden bg-background flex flex-col lg:flex-row">
+      
       {/* Sidebar */}
       <Sidebar />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col w-full">
-        {/* Header */}
-        <header className="border-b border-border sticky top-0 z-30 bg-background">
+      {/* FIX 2: Added min-w-0 and overflow-hidden to ensure this wrapper doesn't stretch beyond the screen */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        
+        {/* Header - No longer needs sticky top-0 because the container won't scroll past it */}
+        <header className="border-b border-border bg-background z-30">
           <div className="px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center justify-between gap-4">
               {/* Search Bar */}
@@ -146,6 +150,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         </header>
 
         {/* Main Content */}
+        {/* This will now independently scroll if the content is too long */}
         <main className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="max-w-7xl mx-auto">{children}</div>
         </main>
