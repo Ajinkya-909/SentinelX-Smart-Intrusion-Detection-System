@@ -17,8 +17,7 @@ import { prisma } from "@/config/db";
 export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const file = req.file;
-  const jobName = (req as any).jobName;
-
+  const jobName = req.body.jobName;
   if (!file) {
     throw new ApiError(400, UPLOAD_ERRORS.NO_FILE);
   }

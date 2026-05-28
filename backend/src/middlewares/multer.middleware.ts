@@ -42,12 +42,19 @@ const fileFilter = (
   cb: multer.FileFilterCallback,
 ) => {
   const ext = path.extname(file.originalname).toLowerCase();
+  
+  // 1. Check extension
+  const isExtensionValid = UPLOAD_CONFIG.ALLOWED_EXTENSIONS.includes(ext);
+  
+  // 2. Check MIME type 
+  // Note: We allow .log and .txt to be text/plain. 
+  // We allow .json to be application/json.
+  // We allow .csv to be text/csv.
+  const isMimeValid = UPLOAD_CONFIG.ALLOWED_MIME_TYPES.includes(file.mimetype);
 
-  if (!UPLOAD_CONFIG.ALLOWED_EXTENSIONS.includes(ext)) {
-    return cb(new Error(UPLOAD_ERRORS.INVALID_FILE_TYPE) as any);
-  }
-
-  if (!UPLOAD_CONFIG.ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+  // LOG FOR DEBUGGING: This will tell you exactly why it's failing
+  if (!isExtensionValid || !isMimeValid) {
+    console.log(`Rejecting file: ${file.originalname} | Ext: ${ext} | Mime: ${file.mimetype}`);
     return cb(new Error(UPLOAD_ERRORS.INVALID_FILE_TYPE) as any);
   }
 
