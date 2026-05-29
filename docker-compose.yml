@@ -1,0 +1,101 @@
+services:
+  # PostgreSQL Database
+  postgres-db:
+    image: postgres:16
+    container_name: sentinelx_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: supersecretpassword
+      POSTGRES_DB: sentinelx_ids
+    ports:
+      - "5432:5432"
+    volumes:
+      - sentinelx_pgdata:/var/lib/postgresql/data
+    networks:
+      - sentinelx-network
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: sentinelx_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - sentinelx_redis_data:/data
+    command: redis-server --appendonly yes --loglevel warning
+    networks:
+      - sentinelx-network
+
+  # ML Service
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: sentinelx_ml
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    networks:
+      - sentinelx-network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sentinelx_backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DOCKER_DATABASE_URL: postgresql://postgres:supersecretpassword@postgres-db:5432/sentinelx_ids
+      DOCKER_REDIS_URL: redis://redis:6379
+      ML_SERVICE_URL: http://ml-service:8000
+    depends_on:
+      - postgres-db
+      - redis
+      - ml-service
+    networks:
+      - sentinelx-network
+
+  # Worker
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sentinelx_worker
+    restart: unless-stopped
+    command: npm run worker
+    environment:
+      DOCKER_DATABASE_URL: postgresql://postgres:supersecretpassword@postgres-db:5432/sentinelx_ids
+      DOCKER_REDIS_URL: redis://redis:6379
+      ML_SERVICE_URL: http://ml-service:8000
+    depends_on:
+      - postgres-db
+      - redis
+    networks:
+      - sentinelx-network
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sentinelx_frontend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
+    networks:
+      - sentinelx-network
+
+volumes:
+  sentinelx_pgdata:
+  sentinelx_redis_data:
+
+networks:
+  sentinelx-network:
+    driver: bridge
