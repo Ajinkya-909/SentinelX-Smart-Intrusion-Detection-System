@@ -10,9 +10,11 @@ export const UPLOAD_CONFIG = {
   // Allowed file types
   ALLOWED_EXTENSIONS: [".log", ".txt", ".json", ".csv"],
   ALLOWED_MIME_TYPES: [
-    "text/plain", // .log, .txt
-    "application/json", // .json
-    "text/csv", // .csv
+    "text/plain",               // Standard for .txt
+    "application/json",         // Standard for .json
+    "text/csv",                 // Standard for .csv
+    "application/octet-stream", // Browser fallback for .log files
+    "application/vnd.ms-excel"  // Windows fallback for .csv files
   ],
 
   // Storage paths
