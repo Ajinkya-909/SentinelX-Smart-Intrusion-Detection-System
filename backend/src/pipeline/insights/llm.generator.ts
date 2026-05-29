@@ -1,7 +1,7 @@
 /**
- * LLM Insights Generator (Refactored)
- * Individual API calls per insight type for maximum reliability
- * One failure doesn't cascade to all insights
+ * LLM Insights Generator (Master Prompt Architecture)
+ * Uses a single, strict JSON-enforced API call to generate all insights simultaneously.
+ * Eliminates API rate limits and token exhaustion.
  */
 
 import logger from "@/config/logger";
@@ -12,12 +12,8 @@ import {
   ActivityTimelineInsightData,
 } from "@/types/insight.types";
 import {
-  buildLLMContext,
-  overviewPrompt,
-  threatSummaryPrompt,
-  recommendationPrompt,
-  attackPatternPrompt,
-  anomalySummaryPrompt,
+  buildMasterContext,
+  masterInsightPrompt,
 } from "./llm.prompts";
 
 // ==========================================
@@ -52,18 +48,15 @@ export const llmInsightsGenerator = {
   isAvailable(): boolean {
     const hasApiKey = !!llmConfig.gemini.apiKey;
     if (hasApiKey) {
-      console.log("[LLM GENERATOR] ✅ Gemini API key found and is being used");
       logger.info("[LLM GENERATOR] ✅ Gemini API key found and is being used");
     } else {
-      console.log("[LLM GENERATOR] ❌ Gemini API key not found");
       logger.warn("[LLM GENERATOR] ❌ Gemini API key not found");
     }
     return hasApiKey;
   },
 
   /**
-   * Generate AI insights using LLM
-   * Individual API call per insight type for reliability
+   * Generate AI insights using a Single Master LLM Call
    */
   async generateAIInsights(
     request: LLMInsightGenerationRequest,
@@ -71,102 +64,60 @@ export const llmInsightsGenerator = {
     const startTime = Date.now();
 
     try {
-      logger.info(
-        `[LLM GENERATOR] Starting AI insight generation for job ${request.jobId}`,
-      );
+      logger.info(`[LLM GENERATOR] Starting Unified AI insight generation for job ${request.jobId}`);
 
       if (!this.isAvailable()) {
-        console.log(
-          "[LLM GENERATOR] ❌ Gemini API not configured - LLM insights generation SKIPPED",
-        );
-        logger.warn(
-          "[LLM GENERATOR] ❌ Gemini API not configured - LLM insights generation SKIPPED",
-        );
+        logger.warn("[LLM GENERATOR] ❌ Gemini API not configured - LLM insights generation SKIPPED");
         return {
           jobId: request.jobId,
           generatedInsights: [],
-          failedInsights: [
-            { insightType: "all", reason: "LLM API key not configured" },
-          ],
+          failedInsights: [{ insightType: "all", reason: "LLM API key not configured" }],
           executionTimeMs: Date.now() - startTime,
         };
       }
 
-      console.log(
-        "[LLM GENERATOR] ✅ Gemini API is available - proceeding with LLM insight generation",
-      );
-      logger.info(
-        "[LLM GENERATOR] ✅ Gemini API is available - proceeding with LLM insight generation",
-      );
-
-      const insightTypes = request.insightTypes || [
-        "OVERVIEW",
-        "THREAT_SUMMARY",
-        "RECOMMENDATION",
-        "ATTACK_PATTERN",
-        "ANOMALY_SUMMARY",
-      ];
-
-      // Build context once (reused for all insights)
-      const context = buildLLMContext(request.findings, request.timelineData);
+      // 1. Build the Unified Context & Prompt
+      logger.info(`[LLM GENERATOR] Building Master Prompt Context...`);
+      const context = buildMasterContext(request.findings, request.timelineData);
+      const prompt = masterInsightPrompt(context);
 
       const generatedInsights: InsightRecord[] = [];
       const failedInsights: Array<{ insightType: string; reason: string }> = [];
+      const expectedTypes = ["OVERVIEW", "THREAT_SUMMARY", "RECOMMENDATION", "ATTACK_PATTERN", "ANOMALY_SUMMARY"];
 
-      // Process each insight type with individual API call
-      for (const insightType of insightTypes) {
-        try {
-          console.log(
-            `[LLM GENERATOR] 📤 Generating ${insightType} insight...`,
-          );
-          logger.info(`[LLM GENERATOR] Generating ${insightType} insight`);
+      try {
+        // 2. Make the Single API Call
+        logger.info(`[LLM GENERATOR] 📤 Sending Master Request to Gemini API...`);
+        const responseText = await this.callGeminiWithRetry(prompt);
+        
+        // 3. Parse the Master JSON Object
+        const masterData = JSON.parse(responseText);
+        logger.info(`[LLM GENERATOR] ✅ Successfully parsed Master JSON response`);
 
-          let prompt = "";
-          switch (insightType) {
-            case "OVERVIEW":
-              prompt = overviewPrompt(context, request.findings);
-              break;
-            case "THREAT_SUMMARY":
-              prompt = threatSummaryPrompt(context, request.findings);
-              break;
-            case "RECOMMENDATION":
-              prompt = recommendationPrompt(context, request.findings);
-              break;
-            case "ATTACK_PATTERN":
-              prompt = attackPatternPrompt(context, request.findings);
-              break;
-            case "ANOMALY_SUMMARY":
-              prompt = anomalySummaryPrompt(context, request.findings);
-              break;
-            default:
-              throw new Error(`Unknown insight type: ${insightType}`);
+        // 4. Map the 5 sections to individual InsightRecords
+        for (const insightType of expectedTypes) {
+          if (!masterData[insightType]) {
+            logger.warn(`[LLM GENERATOR] Missing ${insightType} in Master JSON response`);
+            failedInsights.push({ insightType, reason: "Missing in LLM response payload" });
+            continue;
           }
 
-          // Call Gemini for this specific insight
-          const responseText = await this.callGeminiWithRetry(prompt);
-          const insightData = JSON.parse(responseText);
+          const insightData = masterData[insightType];
 
-          // Validate insight data
-          const validation = insightValidators.validateInsightData(
-            insightType,
-            insightData,
-          );
+          // Validate individual insight data against existing schemas
+          const validation = insightValidators.validateInsightData(insightType, insightData);
 
           if (!validation.valid) {
-            logger.warn(
-              `[LLM GENERATOR] Validation failed for ${insightType}: ${JSON.stringify(
-                validation.errors,
-              )}`,
-            );
+            logger.warn(`[LLM GENERATOR] Validation failed for ${insightType}: ${JSON.stringify(validation.errors)}`);
             failedInsights.push({
               insightType,
-              reason: `Validation failed: ${validation.errors?.[0] || "Unknown"}`,
+              reason: `Validation failed: ${validation.errors?.[0]?.message || "Unknown schema error"}`,
             });
             continue;
           }
 
-          // Build insight record
-          const insight: InsightRecord = {
+          // Build the final insight record
+          generatedInsights.push({
             job_id: request.jobId,
             insight_type: insightType,
             title: this.getTitleForInsightType(insightType),
@@ -174,42 +125,25 @@ export const llmInsightsGenerator = {
             data: insightData,
             generated_by: "LLM",
             model_name: llmConfig.gemini.model,
-            generation_version: "2.0", // New individual-call version
+            generation_version: "3.0-unified", // Upgraded version tracking
             is_visible: true,
             display_order: this.getDisplayOrder(insightType),
-          };
-
-          generatedInsights.push(insight);
-          console.log(
-            `[LLM GENERATOR] ✅ ${insightType} generated successfully`,
-          );
-          logger.info(
-            `[LLM GENERATOR] ✅ ${insightType} generated successfully`,
-          );
-        } catch (error) {
-          const errorMsg =
-            error instanceof Error ? error.message : String(error);
-          console.error(
-            `[LLM GENERATOR] ❌ Failed to generate ${insightType}: ${errorMsg}`,
-          );
-          logger.warn(
-            `[LLM GENERATOR] Failed to generate ${insightType}: ${errorMsg}`,
-          );
-          failedInsights.push({
-            insightType,
-            reason: errorMsg,
           });
-          // Continue to next insight type instead of failing
+          
+          logger.info(`[LLM GENERATOR] ✨ Mapped and validated ${insightType} successfully`);
         }
+
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logger.error(`[LLM GENERATOR] ❌ Master generation failed: ${errorMsg}`);
+        failedInsights.push({
+          insightType: "ALL_LLM",
+          reason: `Master Call Failed: ${errorMsg}`
+        });
       }
 
       const executionTime = Date.now() - startTime;
-      console.log(
-        `[LLM GENERATOR] ✨ Complete: ${generatedInsights.length}/${insightTypes.length} insights generated in ${executionTime}ms`,
-      );
-      logger.info(
-        `[LLM GENERATOR] ✨ Complete: ${generatedInsights.length}/${insightTypes.length} insights generated in ${executionTime}ms`,
-      );
+      logger.info(`[LLM GENERATOR] 🏁 Complete: ${generatedInsights.length}/${expectedTypes.length} insights mapped in ${executionTime}ms`);
 
       return {
         jobId: request.jobId,
@@ -218,23 +152,16 @@ export const llmInsightsGenerator = {
         executionTimeMs: executionTime,
       };
     } catch (error) {
-      logger.error(
-        `[LLM GENERATOR] Error generating AI insights: ${
-          error instanceof Error ? error.message : error
-        }`,
-      );
+      logger.error(`[LLM GENERATOR] Fatal error in AI pipeline: ${error instanceof Error ? error.message : error}`);
       throw error;
     }
   },
 
   /**
-   * Call Gemini API for a single insight
-   * Simple, focused JSON response for high reliability
+   * Call Gemini API with Native JSON Enforcement
    */
   async callGemini(prompt: string): Promise<string> {
     try {
-      logger.debug("[LLM GENERATOR] Calling Gemini API...");
-
       const response = await fetch(
         `${llmConfig.gemini.endpoint}/${llmConfig.gemini.model}:generateContent?key=${llmConfig.gemini.apiKey}`,
         {
@@ -243,39 +170,19 @@ export const llmInsightsGenerator = {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: prompt,
-                  },
-                ],
-              },
-            ],
+            contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
               temperature: llmConfig.behavior.temperature,
               topP: llmConfig.behavior.topP,
               topK: llmConfig.behavior.topK,
-              maxOutputTokens: llmConfig.behavior.maxOutputTokens,
-              responseMimeType: "application/json",
+              maxOutputTokens: 8000, // Increased to accommodate 5 insights at once
+              responseMimeType: "application/json", // STRICT JSON ENFORCEMENT
             },
             safetySettings: [
-              {
-                category: "HARM_CATEGORY_HARASSMENT",
-                threshold: "BLOCK_NONE",
-              },
-              {
-                category: "HARM_CATEGORY_HATE_SPEECH",
-                threshold: "BLOCK_NONE",
-              },
-              {
-                category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                threshold: "BLOCK_NONE",
-              },
-              {
-                category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-                threshold: "BLOCK_NONE",
-              },
+              { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
             ],
           }),
         },
@@ -283,50 +190,26 @@ export const llmInsightsGenerator = {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(
-          `Gemini API error: ${response.status} - ${
-            errorData.error?.message || "Unknown error"
-          }`,
-        );
+        throw new Error(`Gemini API error: ${response.status} - ${errorData.error?.message || "Unknown error"}`);
       }
 
       const data = await response.json();
 
-      // Extract text from response
-      if (
-        !data.candidates ||
-        !data.candidates[0] ||
-        !data.candidates[0].content ||
-        !data.candidates[0].content.parts[0]
-      ) {
-        throw new Error("Invalid Gemini response structure");
+      if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+        throw new Error("Invalid or empty Gemini response structure");
       }
 
       let text = data.candidates[0].content.parts[0].text;
 
-      if (!text) {
-        throw new Error("Empty response from Gemini");
-      }
-
-      // Clean response: remove markdown code blocks if present
+      // Fallback clean-up just in case the API hallucinates markdown despite MimeType
       if (text.includes("```json")) {
-        text = text
-          .replace(/```json\n?/g, "")
-          .replace(/```\n?/g, "")
-          .trim();
+        text = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       } else if (text.includes("```")) {
         text = text.replace(/```\n?/g, "").trim();
       }
 
-      console.log("[LLM GENERATOR] ✅ Received response from Gemini");
-      logger.debug("[LLM GENERATOR] Received response from Gemini");
       return text;
     } catch (error) {
-      logger.error(
-        `[LLM GENERATOR] Gemini API call failed: ${
-          error instanceof Error ? error.message : error
-        }`,
-      );
       throw error;
     }
   },
@@ -345,12 +228,7 @@ export const llmInsightsGenerator = {
 
         if (attempt < llmConfig.gemini.maxRetries) {
           const delayMs = llmConfig.gemini.retryDelayMs * attempt;
-          logger.warn(
-            `[LLM GENERATOR] Attempt ${attempt} failed, retrying in ${delayMs}ms: ${lastError.message}`,
-          );
-          console.log(
-            `[LLM GENERATOR] ⏳ Retrying in ${delayMs}ms (attempt ${attempt}/${llmConfig.gemini.maxRetries})...`,
-          );
+          logger.warn(`[LLM GENERATOR] Attempt ${attempt} failed, retrying in ${delayMs}ms: ${lastError.message}`);
           await new Promise((resolve) => setTimeout(resolve, delayMs));
         }
       }
@@ -359,9 +237,6 @@ export const llmInsightsGenerator = {
     throw lastError;
   },
 
-  /**
-   * Get title for insight type
-   */
   getTitleForInsightType(type: string): string {
     const titles: Record<string, string> = {
       OVERVIEW: "Executive Security Summary",
@@ -373,40 +248,24 @@ export const llmInsightsGenerator = {
     return titles[type] || type;
   },
 
-  /**
-   * Get description for insight type
-   */
   getDescriptionForInsightType(type: string): string {
     const descriptions: Record<string, string> = {
       OVERVIEW: "AI-generated executive summary of the security posture",
-      THREAT_SUMMARY:
-        "Comprehensive threat assessment with classification and immediate concerns",
-      RECOMMENDATION:
-        "Prioritized remediation recommendations from AI analysis",
-      ATTACK_PATTERN:
-        "Identified attack patterns and likely attacker objectives",
+      THREAT_SUMMARY: "Comprehensive threat assessment with classification and immediate concerns",
+      RECOMMENDATION: "Prioritized remediation recommendations from AI analysis",
+      ATTACK_PATTERN: "Identified attack patterns and likely attacker objectives",
       ANOMALY_SUMMARY: "Analysis of anomalous security behavior",
     };
     return descriptions[type] || "";
   },
 
-  /**
-   * Get display order for insight type
-   */
   getDisplayOrder(type: string): number {
     const order: Record<string, number> = {
-      KPI: 1,
-      ALERT: 2,
       OVERVIEW: 3,
       THREAT_SUMMARY: 4,
-      SEVERITY_DISTRIBUTION: 5,
-      TOP_ATTACKERS: 6,
-      ACTIVITY_TIMELINE: 7,
-      THREAT_TIMELINE: 8,
-      GEO_ANALYSIS: 9,
       RECOMMENDATION: 10,
       ATTACK_PATTERN: 11,
-      ANOMALY_SUMMARY: 12,
+      ANOMALY_SUMMARY: 12,  
     };
     return order[type] ?? 99;
   },
