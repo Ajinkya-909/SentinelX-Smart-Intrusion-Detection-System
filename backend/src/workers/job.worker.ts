@@ -79,6 +79,7 @@ export const startWorker = async () => {
     },
     {
       connection: getRedis(),
+      lockDuration: 300000,
     },
   );
 

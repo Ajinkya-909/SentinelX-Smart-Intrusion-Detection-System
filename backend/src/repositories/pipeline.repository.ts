@@ -235,6 +235,22 @@ const pipelineRepository = {
 
     return summary;
   },
+
+  /**
+   * Fetches a paginated window of normalized logs for analysis
+   * @param jobId - UUID of the job
+   * @param take - Number of logs to fetch (window size)
+   * @param skip - Number of logs to skip (offset)
+   */
+  async getNormalizedLogsWindow(jobId: string, take: number, skip: number) {
+    return await prisma.normalized_logs.findMany({
+      where: { job_id: jobId },
+      orderBy: { timestamp: "asc" }, // Crucial: Ensures temporal order is strictly maintained
+      take: take,
+      skip: skip,
+    });
+  }
+
 };
 
 export default pipelineRepository;

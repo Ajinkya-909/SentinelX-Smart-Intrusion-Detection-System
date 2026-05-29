@@ -25,66 +25,73 @@ export const analyzerService = {
    * @param jobId - UUID of the job
    * @returns Array of analyzer findings
    */
+  /**
+   * Phase 3: Analyze normalized logs using a Sliding Window approach
+   * @param jobId - UUID of the job
+   * @returns Array of analyzer findings
+   */
   async analyze(jobId: string): Promise<any[]> {
     const analysisStartTime = Date.now();
 
     try {
       logger.info(
-        `[ANALYZER SERVICE] Fetching normalized logs from DB for job ${jobId}`,
+        `[ANALYZER SERVICE] Starting sliding window analysis for job ${jobId}`,
       );
 
-      // ===== STEP 1: FETCH NORMALIZED LOGS FROM DATABASE =====
-      // This ensures logs have IDs (auto-generated in DB)
-      const normalizedLogs = await prisma.normalized_logs.findMany({
-        where: { job_id: jobId },
-        orderBy: { timestamp: "asc" },
-      });
+      let totalLogsProcessed = 0;
+      let batchCount = 0;
+      const masterFindings: any[] = [];
+
+      // ===== STEP 1: SLIDING WINDOW LOOP =====
+      // Consumes chunks from the generator built in Phase 2
+      for await (const windowLogs of this.fetchLogsInWindows(jobId)) {
+        batchCount++;
+        logger.info(
+          `[ANALYZER SERVICE] 📦 Processing Window #${batchCount} (${windowLogs.length} logs)`,
+        );
+
+        // Validate logs for this specific window
+        const validLogs = windowLogs.filter(
+          (log) => log.job_id && log.timestamp,
+        );
+
+        if (validLogs.length === 0) {
+          logger.warn(
+            `[ANALYZER SERVICE] No valid logs in Window #${batchCount}, skipping.`,
+          );
+          continue;
+        }
+
+        // Execute orchestrator ON THIS WINDOW ONLY
+        // This keeps the Event Loop free and RAM usage strictly capped
+        const orchestrator = new AnalyzerOrchestrator();
+        const windowFindings = await orchestrator.orchestrate(
+          jobId,
+          validLogs as any,
+        );
+
+        logger.info(
+          `[ANALYZER SERVICE] Window #${batchCount} generated ${windowFindings.length} findings`,
+        );
+
+        // Push window findings to the master array
+        masterFindings.push(...windowFindings);
+        totalLogsProcessed += validLogs.length;
+      }
 
       logger.info(
-        `[ANALYZER SERVICE] Fetched ${normalizedLogs.length} logs from database`,
+        `[ANALYZER SERVICE] All windows processed. Total logs scanned (including overlaps): ${totalLogsProcessed}. Total raw findings: ${masterFindings.length}`,
       );
 
-      if (normalizedLogs.length === 0) {
-        logger.warn(`[ANALYZER SERVICE] No normalized logs found for job`);
+      if (masterFindings.length === 0) {
         return [];
       }
 
-      // ===== STEP 2: VALIDATE LOGS =====
-      logger.info(`[ANALYZER SERVICE] Validating logs...`);
-
-      const validLogs = normalizedLogs.filter(
-        (log) => log.job_id && log.timestamp,
-      );
-
-      if (validLogs.length === 0) {
-        logger.warn(`[ANALYZER SERVICE] No valid logs to analyze`);
-        return [];
-      }
-
+      // ===== STEP 2: VALIDATE MASTER FINDINGS =====
       logger.info(
-        `[ANALYZER SERVICE] Validated ${validLogs.length} logs (skipped ${normalizedLogs.length - validLogs.length})`,
+        `[ANALYZER SERVICE] Validating ${masterFindings.length} raw findings...`,
       );
-
-      // ===== STEP 2: EXECUTE ORCHESTRATOR =====
-      logger.info(`[ANALYZER SERVICE] Executing analyzer orchestrator...`);
-
-      const orchestrator = new AnalyzerOrchestrator();
-      const findings = await orchestrator.orchestrate(jobId, validLogs as any);
-
-      logger.info(
-        `[ANALYZER SERVICE] Orchestrator returned ${findings.length} findings`,
-      );
-
-      // ===== STEP 3: VALIDATE FINDINGS =====
-      logger.info(
-        `[ANALYZER SERVICE] Validating ${findings.length} findings...`,
-      );
-
-      const validatedFindings = this.validateFindings(findings);
-
-      logger.info(
-        `[ANALYZER SERVICE] Validated ${validatedFindings.valid.length} valid findings, skipped ${validatedFindings.invalid.length}`,
-      );
+      const validatedFindings = this.validateFindings(masterFindings);
 
       if (validatedFindings.invalid.length > 0) {
         logger.warn(
@@ -92,29 +99,48 @@ export const analyzerService = {
         );
       }
 
-      // ===== STEP 4: CONVERT TO DB FORMAT & ADD FINGERPRINT =====
+      // ===== STEP 3: CONVERT TO DB FORMAT =====
       logger.info(`[ANALYZER SERVICE] Converting findings to DB format...`);
-
-      const findingsForDb = validatedFindings.valid.map((finding) =>
+      let findingsForDb = validatedFindings.valid.map((finding) =>
         this.convertFindingToDbFormat(finding),
+      );
+
+      // ===== STEP 4: DEDUPLICATION (OVERLAPPING WINDOW FIX) =====
+      logger.info(`[ANALYZER SERVICE] Deduplicating overlapping findings...`);
+
+      const uniqueFindingsMap = new Map<string, any>();
+
+      for (const finding of findingsForDb) {
+        // Use the fingerprint generated in convertFindingToDbFormat
+        if (!uniqueFindingsMap.has(finding.fingerprint)) {
+          uniqueFindingsMap.set(finding.fingerprint, finding);
+        }
+        // If it already exists, it's a boundary duplicate and is safely ignored
+      }
+
+      const uniqueFindingsForDb = Array.from(uniqueFindingsMap.values());
+      const duplicatesRemoved =
+        findingsForDb.length - uniqueFindingsForDb.length;
+
+      logger.info(
+        `[ANALYZER SERVICE] Deduplication complete. Removed ${duplicatesRemoved} duplicate boundary findings.`,
       );
 
       // ===== STEP 5: PERSIST FINDINGS =====
       logger.info(
-        `[ANALYZER SERVICE] Persisting ${findingsForDb.length} findings to DB...`,
+        `[ANALYZER SERVICE] Persisting ${uniqueFindingsForDb.length} unique findings to DB...`,
       );
 
+      // IMPORTANT: Passing uniqueFindingsForDb to prevent DB constraint errors
       const insertionResult =
-        await pipelineRepository.insertAnalyzerFindings(findingsForDb);
+        await pipelineRepository.insertAnalyzerFindings(uniqueFindingsForDb);
 
       logger.info(
         `[ANALYZER SERVICE] Insertion: ${insertionResult.total_inserted} inserted, ${insertionResult.total_skipped} skipped`,
       );
-
       const analysisTime = Date.now() - analysisStartTime;
       logger.info(`[ANALYZER SERVICE] Complete in ${analysisTime}ms`);
 
-      // Return inserted findings to orchestrator
       return insertionResult.inserted_findings || [];
     } catch (error) {
       logger.error(
@@ -229,6 +255,58 @@ export const analyzerService = {
       hash = hash & hash;
     }
     return Math.abs(hash).toString(16);
+  },
+
+  /**
+   * Phase 2: Sliding Window Fetcher
+   * Fetches logs in overlapping windows to preserve temporal attack sequences.
+   * * @param jobId - UUID of the job
+   * @param windowSize - How many logs to process at once (e.g., 5000)
+   * @param overlap - How many logs to overlap to catch boundary attacks (e.g., 500)
+   */
+  async *fetchLogsInWindows(
+    jobId: string,
+    windowSize: number = 5000,
+    overlap: number = 500,
+  ) {
+    let skip = 0;
+    let hasMore = true;
+    let iteration = 0;
+
+    logger.info(
+      `[ANALYZER SERVICE] Initializing sliding window fetcher (Window: ${windowSize}, Overlap: ${overlap})`,
+    );
+
+    while (hasMore) {
+      // Fetch the specific window of logs
+      const windowLogs = await pipelineRepository.getNormalizedLogsWindow(
+        jobId,
+        windowSize,
+        skip,
+      );
+
+      if (windowLogs.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      logger.info(
+        `[ANALYZER SERVICE] Fetched window #${iteration + 1} (${windowLogs.length} logs, skip: ${skip})`,
+      );
+
+      // Yield the current window to the orchestrator loop
+      yield windowLogs;
+
+      // Determine if we need to keep fetching
+      if (windowLogs.length < windowSize) {
+        // We hit the end of the database table
+        hasMore = false;
+      } else {
+        // Calculate the skip for the next window to ensure overlap
+        iteration++;
+        skip = iteration * (windowSize - overlap);
+      }
+    }
   },
 };
 
