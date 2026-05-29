@@ -185,7 +185,7 @@ console.log(filteredJobs)
           </p>
         </div>
         <Button
-          onClick={() => navigate("/jobs  /upload")}
+          onClick={() => navigate("/jobs/upload")}
           className="bg-primary hover:bg-primary/60 text-black font-semibold gap-2"
         >
           <Upload size={18} />

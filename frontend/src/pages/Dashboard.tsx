@@ -193,7 +193,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 h-[250px]">
             
             {/* System Analytics */}
-            <div className="bg-card border border-border p-6 rounded-xl flex flex-col justify-center">
+            <div className="bg-card border border-border p-6 rounded-xl flex flex-col justify-start">
                <h3 className="text-base font-semibold text-foreground mb-6">
                 System Telemetry
               </h3>
@@ -205,15 +205,6 @@ export default function Dashboard() {
                   </div>
                   <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
                     <div className="bg-primary h-full w-[100%] rounded-full"></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-sm font-medium mb-2">
-                    <span className="text-muted-foreground">Avg Processing Time</span>
-                    <span className="text-foreground font-semibold">{analytics.averageProcessingTimeSeconds}s</span>
-                  </div>
-                  <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
-                    <div className="bg-accent h-full w-[65%] rounded-full"></div>
                   </div>
                 </div>
               </div>
