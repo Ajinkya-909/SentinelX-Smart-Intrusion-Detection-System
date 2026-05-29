@@ -60,7 +60,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         {/* Header - No longer needs sticky top-0 because the container won't scroll past it */}
         <header className="border-b border-border bg-background z-30">
           <div className="px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center justify-end md:justify-between gap-4">
               {/* Search Bar */}
               <div className="hidden sm:flex items-center flex-1 max-w-md">
                 <div className="relative w-full">

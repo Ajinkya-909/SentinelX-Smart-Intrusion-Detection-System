@@ -24,9 +24,11 @@ app.use(
 //  import the routes
 import authRoutes from "./routes/auth.routes";
 import jobRoutes from "./routes/job.routes";
+import dashboardRoutes from "./routes/dashboard.routes";
 
 app.use("/auth", authRoutes);
 app.use("/jobs", jobRoutes);
+app.use("/dashboard", dashboardRoutes);
 
 app.get("/", (req, res) => {
   res.send("Welcome to SentinelX");
