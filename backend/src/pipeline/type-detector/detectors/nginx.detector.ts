@@ -1,84 +1,47 @@
-import logger from "../../../config/logger";
-
-// ================================================
-// DETECTOR RESULT INTERFACE
-// ================================================
+import { BaseDetector, MicroPattern } from "./base.detector";
 
 export interface DetectorResult {
   type: string;
-  parser: string;
   confidence: number;
+  parser: string;
   matched: string[];
+  analysis?: any;
 }
 
-// ================================================
-// NGINX DETECTOR
-// ================================================
+export class NginxDetector extends BaseDetector {
+  protected readonly logType = "NGINX_ACCESS";
+  protected readonly parserName = "nginxParserV1";
 
-export class NginxDetector {
-  private readonly name = "NGINX";
-
-  // NGINX-specific regex patterns
-  private patterns = {
-    // Standard NGINX access log: 192.168.1.1 - - [01/Jan/2024:12:00:00 +0000] "GET /path HTTP/1.1" 200 1234
-    accessLog:
-      /(\d+\.\d+\.\d+\.\d+)\s+\S+\s+\S+\s+\[.*?\]\s+"(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+\S+\s+HTTP\/\d\.\d"\s+(\d{3})/,
-
-    // HTTP request line: GET /path HTTP/1.1
-    httpRequest:
-      /(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+\S+\s+HTTP\/\d\.\d/,
-
-    // Status code: 200, 404, 500, etc
-    statusCode: /\s(2\d{2}|3\d{2}|4\d{2}|5\d{2})\s/,
-  };
-
-  /**
-   * Analyze lines for NGINX log format
-   * @param lines - Sample of log lines
-   * @returns - DetectorResult with confidence score
-   */
-  analyze(lines: string[]): DetectorResult {
-    logger.debug(`[NGINX_DETECTOR] Analyzing ${lines.length} lines`);
-
-    let accessLogMatches = 0;
-    let httpRequestMatches = 0;
-    let statusCodeMatches = 0;
-
-    for (const line of lines) {
-      if (this.patterns.accessLog.test(line)) {
-        accessLogMatches++;
-      }
-      if (this.patterns.httpRequest.test(line)) {
-        httpRequestMatches++;
-      }
-      if (this.patterns.statusCode.test(line)) {
-        statusCodeMatches++;
-      }
+  protected readonly patterns: MicroPattern[] = [
+    {
+      name: "hasIPv4OrIPv6",
+      regex: /(?:\d{1,3}\.){3}\d{1,3}|(?:[a-fA-F0-9]{1,4}:){7}[a-fA-F0-9]{1,4}/,
+      weight: 1
+    },
+    {
+      name: "hasHttpVerb",
+      regex: /"(?:GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)\s/,
+      weight: 2,
+      isCritical: true // Without an HTTP verb, it's very unlikely to be an access log
+    },
+    {
+      name: "hasStatusCode",
+      regex: /\s[2345]\d{2}\s/,
+      weight: 1
+    },
+    {
+      name: "hasNginxTimestamp",
+      // Matches standard Nginx: [15/May/2026:10:30:45 +0000]
+      regex: /\[\d{2}\/[A-Za-z]{3}\/\d{4}:\d{2}:\d{2}:\d{2}\s[+-]\d{4}\]/,
+      weight: 3 
+    },
+    {
+      name: "hasNginxErrorFormat",
+      // Nginx error logs look different: 2026/05/15 10:30:45 [error] 12345#0:
+      regex: /^\d{4}\/\d{2}\/\d{2}\s\d{2}:\d{2}:\d{2}\s\[(?:error|warn|crit|info|debug)\]/,
+      weight: 4
     }
-
-    // Calculate confidence: average of all pattern matches
-    const accessLogConfidence = accessLogMatches / lines.length;
-    const httpRequestConfidence = httpRequestMatches / lines.length;
-    const statusCodeConfidence = statusCodeMatches / lines.length;
-
-    const confidence =
-      (accessLogConfidence + httpRequestConfidence + statusCodeConfidence) / 3;
-
-    logger.debug(
-      `[NGINX_DETECTOR] Confidence: ${(confidence * 100).toFixed(2)}% (accessLog: ${(accessLogConfidence * 100).toFixed(2)}%, httpRequest: ${(httpRequestConfidence * 100).toFixed(2)}%, statusCode: ${(statusCodeConfidence * 100).toFixed(2)}%)`,
-    );
-
-    return {
-      type: "NGINX_ACCESS",
-      parser: "nginxParserV1",
-      confidence,
-      matched: [
-        accessLogMatches > 0 ? "accessLog" : null,
-        httpRequestMatches > 0 ? "httpRequest" : null,
-        statusCodeMatches > 0 ? "statusCode" : null,
-      ].filter((m) => m !== null) as string[],
-    };
-  }
+  ];
 }
 
 export const nginxDetector = new NginxDetector();

@@ -3,122 +3,132 @@ import { jobRepository } from "../../repositories/job.repository";
 import logger from "../../config/logger";
 import {
   nginxDetector,
+  apacheDetector,
   syslogDetector,
+  windowsEventDetector,
+  firewallDetector,
+  cloudTrailDetector,
+  suricataDetector,
+  dockerDetector,
   jsonDetector,
   keyValueDetector,
-  genericDetector,
-  DetectorResult,
+  genericDetector
 } from "./detectors";
 
-// ================================================
-// TYPE DETECTOR SERVICE
-// ================================================
+// Array of all available heuristic detectors for easy iteration
+const ALL_DETECTORS = [
+  nginxDetector,
+  apacheDetector,
+  syslogDetector,
+  windowsEventDetector,
+  firewallDetector,
+  cloudTrailDetector,
+  suricataDetector,
+  dockerDetector,
+  jsonDetector,
+  keyValueDetector,
+  genericDetector
+];
 
 export class TypeDetectorService {
   /**
-   * Main detection method
-   * Analyzes raw lines to detect log format
+   * Analyzes raw lines to detect log format using heuristic scoring and dynamic sampling.
    * @param rawLines - Array of preprocessed log lines
-   * @returns - DetectionResult with detected type, confidence, parser, encoding
+   * @param options - Config options (e.g., exclude certain parsers during adaptive retries)
    */
-  async detect(rawLines: string[]): Promise<DetectionResult> {
-    logger.info(
-      `[TYPE_DETECTOR] Starting type detection on ${rawLines.length} lines`,
-    );
+  async detect(rawLines: string[], options?: { exclude?: string[] }): Promise<DetectionResult> {
+    logger.info(`[TYPE_DETECTOR] Starting adaptive type detection on ${rawLines.length} lines`);
 
-    // Sample first N lines for analysis (don't analyze entire file)
-    const sampleSize = Math.min(100, rawLines.length);
-    const sampleLines = rawLines.slice(0, sampleSize);
+    const excludedTypes = options?.exclude || [];
+    if (excludedTypes.length > 0) {
+      logger.info(`[TYPE_DETECTOR] Excluding previously failed types: ${excludedTypes.join(", ")}`);
+    }
 
-    logger.info(
-      `[TYPE_DETECTOR] Analyzing sample of ${sampleSize} lines with all detectors`,
-    );
+    const sampleSizesToTry = [100, 500, 1000];
+    let bestRawResult: any = null;
+    let finalAnalysis: Record<string, number> = {};
 
-    // Run all detectors and store results in object (type-safe)
-    const detectorResults = {
-      nginx: nginxDetector.analyze(sampleLines),
-      syslog: syslogDetector.analyze(sampleLines),
-      json: jsonDetector.analyze(sampleLines),
-      keyValue: keyValueDetector.analyze(sampleLines),
-      generic: genericDetector.analyze(sampleLines),
-    };
+    // Dynamic Expanding Sample Size Loop
+    for (const size of sampleSizesToTry) {
+      const sampleSize = Math.min(size, rawLines.length);
+      const sampleLines = rawLines.slice(0, sampleSize);
 
-    logger.debug(
-      `[TYPE_DETECTOR] Detector results:`,
-      Object.entries(detectorResults)
-        .map(
-          ([type, result]) =>
-            `${type}=${(result.confidence * 100).toFixed(2)}%`,
-        )
-        .join(", "),
-    );
+      logger.info(`[TYPE_DETECTOR] Sampling ${sampleSize} lines...`);
 
-    // Find the detector with highest confidence
-    const bestResult = Object.values(detectorResults).reduce((best, current) =>
-      current.confidence > best.confidence ? current : best,
-    );
+      let currentBest: any = null;
+      let highestConfidence = -1;
+      const currentAnalysis: Record<string, number> = {};
 
-    logger.info(
-      `[TYPE_DETECTOR] Best match: ${bestResult.type} with ${(bestResult.confidence * 100).toFixed(2)}% confidence`,
-    );
+      // Run all detectors in the suite
+      for (const detector of ALL_DETECTORS) {
+        const result = detector.analyze(sampleLines);
+        currentAnalysis[result.type] = result.confidence;
 
-    // Build final DetectionResult
+        // Skip excluded types (used by the adaptive parser loop to force fallbacks)
+        if (excludedTypes.includes(result.type)) {
+          continue;
+        }
+
+        // Track the highest confidence winner
+        if (result.confidence > highestConfidence) {
+          highestConfidence = result.confidence;
+          currentBest = result;
+        }
+      }
+
+      bestRawResult = currentBest;
+      finalAnalysis = currentAnalysis;
+
+      logger.debug(`[TYPE_DETECTOR] Best match at ${sampleSize} lines: ${bestRawResult?.type} (${((bestRawResult?.confidence || 0) * 100).toFixed(2)}%)`);
+
+      // If we have a strong confidence (>= 50%), OR we've exhausted the available lines, stop expanding.
+      if ((bestRawResult && bestRawResult.confidence >= 0.50) || sampleSize >= rawLines.length) {
+        logger.info(`[TYPE_DETECTOR] Confidence threshold met or max lines reached. Stopping expansion.`);
+        break;
+      } else {
+        logger.warn(`[TYPE_DETECTOR] Low confidence (${((bestRawResult?.confidence || 0) * 100).toFixed(2)}%). Expanding sample size...`);
+      }
+    }
+
+    // Ultimate Safety Net: If EVERYTHING was excluded somehow, force generic.
+    if (!bestRawResult) {
+      bestRawResult = genericDetector.analyze(rawLines.slice(0, 100));
+    }
+
+    // Build the final DetectionResult formatted for the pipeline database
     const detectionResult: DetectionResult = {
-      detectedType: bestResult.type,
-      confidence: bestResult.confidence,
-      parser: bestResult.parser,
-      encoding: "utf8",
+      detectedType: bestRawResult.type,
+      confidence: bestRawResult.confidence,
+      parser: bestRawResult.parser,
+      encoding: "utf8", // Assume utf8 as preprocessor handles standardizing this
       patterns: {
-        matched: bestResult.matched,
-        analysis: {
-          nginx: detectorResults.nginx.confidence,
-          syslog: detectorResults.syslog.confidence,
-          json: detectorResults.json.confidence,
-          keyValue: detectorResults.keyValue.confidence,
-          generic: detectorResults.generic.confidence,
-        },
+        matched: bestRawResult.matched || [],
+        analysis: finalAnalysis,
       },
     };
 
     logger.info(
-      `[TYPE_DETECTOR] Detection result: ${detectionResult.detectedType} (${Math.round(detectionResult.confidence * 100)}% confidence)`,
+      `[TYPE_DETECTOR] Final Detection: ${detectionResult.detectedType} (${Math.round(detectionResult.confidence * 100)}% confidence) -> mapped to ${detectionResult.parser}`
     );
 
     return detectionResult;
   }
 
-  /**
-   * Update detection metadata in database
-   * Called from orchestrator after detection completes
-   * @param jobId - UUID of the job
-   * @param metadata - DetectionResult to store
-   */
-  async updateDetectionMetadata(
-    jobId: string,
-    metadata: DetectionResult,
-  ): Promise<void> {
+  // --- EXISTING DATABASE METHODS (Untouched) ---
+
+  async updateDetectionMetadata(jobId: string, metadata: DetectionResult): Promise<void> {
     logger.info(`[TYPE_DETECTOR] Storing detection metadata for job ${jobId}`);
     await jobRepository.updateDetectionMetadata(jobId, metadata);
     logger.info(`[TYPE_DETECTOR] Detection metadata stored successfully`);
   }
 
-  /**
-   * Fetch detection metadata from database
-   * Called from parserService to get detected type and parser strategy
-   * @param jobId - UUID of the job
-   * @returns - DetectionResult if exists, null otherwise
-   */
   async getDetectionMetadata(jobId: string): Promise<DetectionResult | null> {
     logger.info(`[TYPE_DETECTOR] Fetching detection metadata for job ${jobId}`);
     const metadata = await jobRepository.getDetectionMetadata(jobId);
     if (metadata) {
-      logger.info(
-        `[TYPE_DETECTOR] Detection metadata found: ${metadata.detectedType}`,
-      );
+      logger.info(`[TYPE_DETECTOR] Detection metadata found: ${metadata.detectedType}`);
     } else {
-      logger.warn(
-        `[TYPE_DETECTOR] No detection metadata found for job ${jobId}`,
-      );
+      logger.warn(`[TYPE_DETECTOR] No detection metadata found for job ${jobId}`);
     }
     return metadata;
   }

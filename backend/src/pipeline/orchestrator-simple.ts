@@ -80,35 +80,85 @@ export const executeOrchestrator = async (
         for await (const batch of preprocessorService.preprocess(filePath)) {
           batchCount++;
           console.log(
-            `[ORCHESTRATOR] 📦 Batch #${batchCount}: ${batch.metadata.lineCount} lines`,
+            `\n[ORCHESTRATOR] 📦 Batch #${batchCount}: ${batch.metadata.lineCount} lines`,
           );
 
-          // Type detection on first batch only
+          // Type detection on first batch to establish a baseline
           if (batchCount === 1) {
-            console.log(`[ORCHESTRATOR] 🔍 Type detection (first batch)...`);
+            console.log(`[ORCHESTRATOR] 🔍 Initial Type detection (first batch)...`);
             detectionResult = await typeDetectorService.detect(batch.rawLines);
             await typeDetectorService.updateDetectionMetadata(
               jobId,
               detectionResult,
             );
             console.log(
-              `[ORCHESTRATOR] ✅ Detected: ${detectionResult.detectedType}`,
+              `[ORCHESTRATOR] ✅ Initial Detected Type: ${detectionResult.detectedType}`,
             );
           }
 
-          // Parse batch
-          console.log(`[ORCHESTRATOR] 📊 Parsing batch #${batchCount}...`);
-          const parsedLogs = await parserService.parseBatch(
-            batch.rawLines,
-            detectionResult.detectedType,
-          );
+          // ---------------------------------------------------------
+          // ADAPTIVE PARSING LOOP START
+          // ---------------------------------------------------------
+          const MIN_SUCCESS_THRESHOLD = 0.85; // 85% success required
+          const MAX_RETRIES = 2;
+          let retryCount = 0;
+          let parseResult: any = null;
+          let currentParserType = detectionResult.detectedType;
 
-          // Normalize batch
+          while (retryCount <= MAX_RETRIES) {
+            console.log(`[ORCHESTRATOR] 📊 Parsing batch #${batchCount} using ${currentParserType} (Attempt ${retryCount + 1})...`);
+            
+            // Expected to return { parsedLogs, failedLines, successRate, detectedTypeUsed }
+            parseResult = await parserService.parseBatch(
+              batch.rawLines,
+              currentParserType,
+            );
+
+            // If success is high enough, or we are already at the GENERIC fallback, break the loop
+            if (parseResult.successRate >= MIN_SUCCESS_THRESHOLD || currentParserType === "GENERIC") {
+              break; 
+            }
+
+            console.warn(`[ORCHESTRATOR] ⚠️ Parser ${currentParserType} failed threshold (${(parseResult.successRate * 100).toFixed(1)}%). Re-evaluating...`);
+
+            // Dynamically re-detect on THIS specific failing batch, explicitly excluding the parser that just failed!
+            const newDetection = await typeDetectorService.detect(batch.rawLines, { exclude: [currentParserType] });
+            
+            // If the detector just suggests the exact same failing parser, force GENERIC to break the loop
+            if (newDetection.detectedType === currentParserType) {
+              currentParserType = "GENERIC";
+            } else {
+              currentParserType = newDetection.detectedType;
+            }
+
+            // Keep detectionResult in sync so the Normalizer maps fields correctly later
+            detectionResult = newDetection; 
+            retryCount++;
+
+            // Update DB metadata so the NEXT batch inherits this new, better parser
+            await typeDetectorService.updateDetectionMetadata(jobId, detectionResult);
+          }
+
+          // If we exhausted retries and it still failed the threshold, force GENERIC as a last resort
+          if (parseResult.successRate < MIN_SUCCESS_THRESHOLD && currentParserType !== "GENERIC") {
+            console.warn(`[ORCHESTRATOR] ⚠️ Exhausted retries for batch #${batchCount}. Forcing GENERIC fallback.`);
+            currentParserType = "GENERIC";
+            parseResult = await parserService.parseBatch(batch.rawLines, "GENERIC");
+            
+            // Update metadata to reflect the forced fallback
+            detectionResult = { detectedType: "GENERIC", confidence: 1, parser: "genericParser", encoding: "utf8", patterns: { matched: [], analysis: {} }};
+            await typeDetectorService.updateDetectionMetadata(jobId, detectionResult);
+          }
+          // ---------------------------------------------------------
+          // ADAPTIVE PARSING LOOP END
+          // ---------------------------------------------------------
+
+          // Normalize batch using the successfully extracted parsedLogs
           console.log(`[ORCHESTRATOR] 🔄 Normalizing batch #${batchCount}...`);
           const normalizationResult = await normalizerService.normalize(
             jobId,
-            parsedLogs,
-            detectionResult,
+            parseResult.parsedLogs, // Use the logs extracted from the adaptive loop
+            detectionResult,        // Pass the final detection result so field mapping aligns
           );
 
           if (normalizationResult.success) {
@@ -129,7 +179,7 @@ export const executeOrchestrator = async (
         );
         await jobService.updateJobStage(jobId, JobStageEnum.NORMALIZED, 40);
         console.log(
-          `[ORCHESTRATOR] ✅ CHECKPOINT 2 COMPLETE: ${totalLinesProcessed} logs normalized`,
+          `\n[ORCHESTRATOR] ✅ CHECKPOINT 2 COMPLETE: ${totalLinesProcessed} logs normalized`,
         );
       } catch (error) {
         console.error(`[ORCHESTRATOR] ❌ NORMALIZED stage failed:`, error);
@@ -148,7 +198,7 @@ export const executeOrchestrator = async (
       lastCompletedStage === JobStageEnum.UPLOADED ||
       lastCompletedStage === JobStageEnum.NORMALIZED
     ) {
-      console.log(`[ORCHESTRATOR] 🔄 CHECKPOINT 3: ANALYZING...`);
+      console.log(`\n[ORCHESTRATOR] 🔄 CHECKPOINT 3: ANALYZING...`);
 
       // Delete pre-existing analyzer findings to avoid duplication
       const deletedFindings = await prisma.analyzer_findings.deleteMany({
@@ -187,7 +237,7 @@ export const executeOrchestrator = async (
       lastCompletedStage === JobStageEnum.NORMALIZED ||
       lastCompletedStage === JobStageEnum.ANALYZED
     ) {
-      console.log(`[ORCHESTRATOR] 🔄 CHECKPOINT 4: GENERATING INSIGHTS...`);
+      console.log(`\n[ORCHESTRATOR] 🔄 CHECKPOINT 4: GENERATING INSIGHTS...`);
 
       // Delete pre-existing insights to avoid duplication
       const deletedInsights = await prisma.insights.deleteMany({
@@ -214,7 +264,7 @@ export const executeOrchestrator = async (
           100,
         );
         console.log(
-          `[ORCHESTRATOR] ✅ CHECKPOINT 4 COMPLETE: Insights generated`,
+          `[ORCHESTRATOR] ✅ CHECKPOINT 4 COMPLETE: Insights generated\n`,
         );
 
         // Mark job as COMPLETED
@@ -231,7 +281,7 @@ export const executeOrchestrator = async (
         throw error;
       }
     } else {
-      console.log(`[ORCHESTRATOR] ⏭️  Skipping INSIGHTS (already done)`);
+      console.log(`[ORCHESTRATOR] ⏭️  Skipping INSIGHTS (already done)\n`);
       // Retrieve existing insights
       const insights = await prisma.insights.findMany({
         where: { job_id: jobId },
@@ -245,7 +295,7 @@ export const executeOrchestrator = async (
       };
     }
   } catch (error) {
-    console.error(`[ORCHESTRATOR] ❌ Pipeline failed for job ${jobId}:`, error);
+    console.error(`\n[ORCHESTRATOR] ❌ Pipeline failed for job ${jobId}:`, error);
     await jobService.updateJobStatus(jobId, JobStatusEnum.FAILED);
 
     throw error;
