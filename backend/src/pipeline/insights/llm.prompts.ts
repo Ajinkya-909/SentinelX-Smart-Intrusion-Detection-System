@@ -22,86 +22,108 @@ export const buildMasterContext = (
     LOW: findings.filter((f) => f.severity === "LOW").length,
   };
 
-  // 2. Aggregate Top Attacking IPs (Token Optimized)
-  const ipCounts = new Map<string, number>();
+  // 2. Aggregate Top Attacking Entities (Context-Aware Entity Scanner)
+  const entityCounts = new Map<string, number>();
   findings.forEach(f => {
-    if (f.affected_entities?.ips) {
-      f.affected_entities.ips.forEach((ip: string) => ipCounts.set(ip, (ipCounts.get(ip) || 0) + 1));
+    if (f.affected_entities) {
+      for (const [key, value] of Object.entries(f.affected_entities)) {
+        if (key.includes('ip') || key.includes('user') || key.includes('attacker') || key.includes('source')) {
+          if (typeof value === 'string' && value !== "unknown" && value.trim() !== "") {
+            entityCounts.set(value, (entityCounts.get(value) || 0) + 1);
+          } else if (Array.isArray(value)) {
+            value.forEach(v => {
+              if (typeof v === 'string' && v !== "unknown" && v.trim() !== "") {
+                entityCounts.set(v, (entityCounts.get(v) || 0) + 1);
+              }
+            });
+          }
+        }
+      }
     }
   });
-  const topIps = Array.from(ipCounts.entries())
+
+  const topEntities = Array.from(entityCounts.entries())
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([ip, count]) => `${ip} (${count} threats)`)
+    .slice(0, 10)
+    .map(([entity, count]) => `${entity} (${count} threats)`)
     .join(", ");
 
-  // 3. Extract Top 15 Most Relevant Findings
-  const priorityFindings = findings
-    .sort((a, b) => {
-      const severityWeight: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, INFO: 0 };
-      return (severityWeight[b.severity] || 0) - (severityWeight[a.severity] || 0);
-    })
-    .slice(0, 15)
-    .map((f) => `- [${f.severity}] ${f.finding_type}: ${f.summary || "No summary"}`)
-    .join("\n");
+  // 3. Finding Details (Enriched with Evidence!)
+  // Sort by severity so the LLM pays attention to the most critical items first
+  const severityOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4 };
+  const sortedFindings = [...findings].sort((a, b) => (severityOrder[a.severity] ?? 5) - (severityOrder[b.severity] ?? 5));
+
+  // Cap at top 60 findings to avoid token limits, but prioritize the critical ones
+  const criticalFindingsList = sortedFindings.slice(0, 60).map((f) => {
+    let findingStr = `- [${f.severity}] ${f.finding_type}: ${f.summary || "No summary"}\n`;
+    findingStr += `  Analyzer Engine: ${f.analyzer} | Confidence: ${(f.confidence * 100).toFixed(1)}%\n`;
+    
+    // INJECT THE RICH EVIDENCE SO THE LLM SEES THE MATH & EXPLOITS
+    if (f.evidence && Object.keys(f.evidence).length > 0) {
+      findingStr += `  Evidence: ${JSON.stringify(f.evidence)}\n`;
+    }
+    return findingStr;
+  }).join("\n");
 
   return `
-SECURITY PIPELINE TELEMETRY
-========================
-Time Range: ${timelineData.time_range.start} to ${timelineData.time_range.end}
+--- SECURITY ANALYSIS CONTEXT ---
+TOTAL THREATS DETECTED: ${findings.length}
+SEVERITY BREAKDOWN: CRITICAL:${severityCounts.CRITICAL}, HIGH:${severityCounts.HIGH}, MEDIUM:${severityCounts.MEDIUM}, LOW:${severityCounts.LOW}
+
+TOP THREAT ACTORS (IPs/Users):
+${topEntities || "None clearly identified"}
+
+KEY FINDINGS (Top 60 by Severity, including forensic evidence):
+${criticalFindingsList || "No specific findings generated."}
+
+TIMELINE SUMMARY:
 Total Events Analyzed: ${timelineData.total_events}
-Total Threats Detected: ${findings.length}
-Severity Breakdown: CRITICAL=${severityCounts.CRITICAL}, HIGH=${severityCounts.HIGH}, MEDIUM=${severityCounts.MEDIUM}, LOW=${severityCounts.LOW}
-
-Top Suspicious IPs:
-${topIps || "None identified"}
-
-Highest Priority Findings:
-${priorityFindings}
-`;
+Time Range: ${timelineData.time_range.start} to ${timelineData.time_range.end}
+---------------------------------
+  `.trim();
 };
 
-/**
- * The Master Prompt: Requests all 5 insights in a single, strictly formatted JSON payload.
- * Types (String vs Number vs Array) must be strictly respected to pass Zod validation.
- */
-export const masterInsightPrompt = (context: string): string => {
-  return `
-You are an elite Lead Cybersecurity Analyst. Review the following security telemetry and generate a comprehensive threat intelligence report.
+export const masterInsightPrompt = `
+You are an elite enterprise security analyst and incident responder. Review the provided SECURITY ANALYSIS CONTEXT.
+Your task is to synthesize the raw analyzer findings and forensic evidence into a comprehensive, executive-level security report.
 
-${context}
+You MUST respond with a single, valid JSON object exactly matching the schema below.
+DO NOT include markdown formatting (like \`\`\`json) or any outside text. ONLY return the raw JSON object.
 
-INSTRUCTIONS:
-Analyze the telemetry and generate exactly 5 distinct security insights. 
-You MUST respond with a single valid JSON object containing exactly the structure requested below. 
-Pay strict attention to data types. Do NOT wrap numbers or booleans in quotes. Enums must match exactly.
-
-REQUIRED JSON STRUCTURE:
+SCHEMA REQUIREMENTS:
 {
   "OVERVIEW": {
-    "summary": "<String: 2-3 sentence executive summary of the overall security status>",
-    "threat_level": "<Enum: CRITICAL, HIGH, MEDIUM, or LOW>",
-    "total_threats": <Number: Extract from Total Threats Detected in context>,
-    "affected_systems": <Number: Estimate of unique systems/endpoints affected>,
-    "key_findings": ["<String: finding 1>", "<String: finding 2>", "<String: finding 3>"]
+    "executive_summary": "<String: A professional 3-4 sentence high-level summary of the entire incident or security posture>",
+    "overall_risk_score": <Number: 0-100 based on severity and volume of findings>,
+    "primary_threat_vector": "<String: Short description of the main method of attack or most significant risk>"
   },
   "THREAT_SUMMARY": {
-    "overall_threat_classification": "<Enum: CRITICAL, HIGH, MEDIUM, or LOW>",
-    "threat_count": <Number: Extract from Total Threats Detected in context>,
-    "critical_threats": <Number: Extract from CRITICAL count in context>,
-    "high_threats": <Number: Extract from HIGH count in context>,
-    "summary_narrative": "<String: 2 sentence overall threat assessment narrative>",
-    "immediate_concerns": ["<String: specific concern 1>", "<String: specific concern 2>"]
+    "critical_threats": [
+      {
+        "name": "<String: Name of the threat>",
+        "description": "<String: 1-2 sentence description>",
+        "affected_systems": ["<String: endpoint/system 1>"]
+      }
+    ],
+    "high_threats": [
+      {
+        "name": "<String: Name of the threat>",
+        "description": "<String: 1-2 sentence description>",
+        "affected_systems": ["<String: endpoint/system 1>"]
+      }
+    ]
   },
   "RECOMMENDATION": {
-    "recommendations": [
+    "immediate_actions": [
       {
         "title": "<String: short action title>",
-        "priority": "<Enum: CRITICAL, HIGH, MEDIUM, or LOW>",
-        "description": "<String: 1 sentence description referencing specific IPs or threats>",
+        "priority": "<Enum: CRITICAL or HIGH>",
+        "description": "<String: 1 sentence description of what to do to stop the active threats>",
         "actions": ["<String: action 1>", "<String: action 2>"],
         "impact": "<String: expected positive impact>"
-      },
+      }
+    ],
+    "long_term_actions": [
       {
         "title": "<String: short action title>",
         "priority": "<Enum: HIGH or MEDIUM>",
@@ -120,15 +142,11 @@ REQUIRED JSON STRUCTURE:
     "confidence_score": <Number: float between 0.0 and 1.0>,
     "likely_goals": ["<String: goal 1>", "<String: goal 2>"]
   },
-  "ANOMALY_SUMMARY": {
-    "anomaly_type": "<String: type of primary anomaly detected>",
-    "description": "<String: 2 sentence description of the unusual behavior>",
+  "ANOMALOUS_BEHAVIOR_SUMMARY": {
+    "anomaly_type": "<String: type of primary anomaly detected (e.g., Exfiltration, Velocity, Bot)>",
+    "description": "<String: 2 sentence description of the unusual behavior derived from Statistical, Temporal, or ML analyzers>",
     "confidence_score": <Number: float between 0.0 and 1.0>,
-    "affected_entities": ["<String: entity 1>", "<String: entity 2>"],
-    "deviation_from_baseline": "<String: how this deviates from normal behavior>",
-    "recommended_action": "<String: recommended investigative action>",
-    "severity": "<Enum: CRITICAL, HIGH, MEDIUM, or LOW>"
+    "affected_entities": ["<String: entity 1>", "<String: entity 2>"]
   }
 }
 `;
-};

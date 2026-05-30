@@ -79,7 +79,8 @@ export const llmInsightsGenerator = {
       // 1. Build the Unified Context & Prompt
       logger.info(`[LLM GENERATOR] Building Master Prompt Context...`);
       const context = buildMasterContext(request.findings, request.timelineData);
-      const prompt = masterInsightPrompt(context);
+      // masterInsightPrompt is a static template string; append the context below it
+      const prompt = `${masterInsightPrompt}\n\n${context}`;
 
       const generatedInsights: InsightRecord[] = [];
       const failedInsights: Array<{ insightType: string; reason: string }> = [];
@@ -134,7 +135,7 @@ export const llmInsightsGenerator = {
         }
 
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorMsg = error instanceof Error ? error.message : `${error}`;
         logger.error(`[LLM GENERATOR] ❌ Master generation failed: ${errorMsg}`);
         failedInsights.push({
           insightType: "ALL_LLM",
@@ -224,7 +225,7 @@ export const llmInsightsGenerator = {
       try {
         return await this.callGemini(prompt);
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
+        lastError = error instanceof Error ? error : new Error(`${error}`);
 
         if (attempt < llmConfig.gemini.maxRetries) {
           const delayMs = llmConfig.gemini.retryDelayMs * attempt;

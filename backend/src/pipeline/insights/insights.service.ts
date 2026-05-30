@@ -324,7 +324,7 @@ export const insightsService = {
           job_id: jobId,
           insight_type: "TOP_ATTACKERS",
           title: "Top Attackers",
-          description: "Most suspicious IP addresses and entities",
+          description: "Most suspicious IPs and Entities",
           data: topAttackers,
           generated_by: "DETERMINISTIC",
           is_visible: true,
@@ -874,11 +874,12 @@ export const insightsService = {
 
   /**
    * Generate TOP_ATTACKERS from findings
+   * PATCHED: Context-Aware entity extraction (no longer relying on hardcoded .ips array)
    */
   generateTopAttackers(
     findings: AnalyzerFindingWithLogs[],
   ): TopAttackersInsightData {
-    const ipMap = new Map<
+    const attackerMap = new Map<
       string,
       {
         request_count: number;
@@ -889,11 +890,11 @@ export const insightsService = {
       }
     >();
 
-    // Aggregate data from findings and their logs
+    // 1. Aggregate data from findings and their logs (IPs from logs)
     for (const finding of findings) {
       for (const log of finding.referenced_logs) {
-        if (log.ip_address) {
-          const existing = ipMap.get(log.ip_address) || {
+        if (log.ip_address && log.ip_address !== "unknown") {
+          const existing = attackerMap.get(log.ip_address) || {
             request_count: 0,
             threat_count: 0,
             severities: new Set(),
@@ -910,34 +911,47 @@ export const insightsService = {
             }
           }
 
-          ipMap.set(log.ip_address, existing);
+          attackerMap.set(log.ip_address, existing);
         }
       }
     }
 
-    // Get affected entities from findings too
+    // 2. Aggregate from affected_entities dynamically (The Fix!)
     for (const finding of findings) {
       if (finding.affected_entities) {
-        const entities = finding.affected_entities as any;
-        if (entities.ips && Array.isArray(entities.ips)) {
-          for (const ip of entities.ips) {
-            const existing = ipMap.get(ip) || {
-              request_count: 0,
-              threat_count: 1,
-              severities: new Set(),
-              countries: new Set(),
-            };
-
-            existing.threat_count++;
-            existing.severities.add(finding.severity || "INFO");
-            ipMap.set(ip, existing);
+        const entities = new Set<string>();
+        
+        // Dynamically scan for IPs or Usernames in the new schema
+        for (const [key, value] of Object.entries(finding.affected_entities)) {
+          // Check keys that likely contain attacker identities
+          if (key.includes('ip') || key.includes('user') || key.includes('attacker') || key.includes('source')) {
+            if (typeof value === 'string' && value !== "unknown" && value.trim() !== "") {
+              entities.add(value);
+            } else if (Array.isArray(value)) {
+              value.forEach(v => {
+                if (typeof v === 'string' && v !== "unknown" && v.trim() !== "") entities.add(v);
+              });
+            }
           }
+        }
+
+        for (const entity of entities) {
+          const existing = attackerMap.get(entity) || {
+            request_count: 0,
+            threat_count: 0,
+            severities: new Set(),
+            countries: new Set(),
+          };
+
+          existing.threat_count++; // It's in a finding, so it's a threat
+          existing.severities.add(finding.severity || "INFO");
+          attackerMap.set(entity, existing);
         }
       }
     }
 
     // Convert to sorted array and get top 10
-    const attackers = Array.from(ipMap.entries())
+    const attackers = Array.from(attackerMap.entries())
       .map(([ip, data]) => {
         const severities = Array.from(data.severities);
         const topSeverity = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"].find(
@@ -945,7 +959,7 @@ export const insightsService = {
         ) as any;
 
         const attacker: AttackerInfo = {
-          ip,
+          ip, // Keeping the field named 'ip' to match the type definition, even if it's a username/entity
           request_count: data.request_count,
           threat_count: data.threat_count,
           severity: topSeverity || "LOW",
@@ -962,7 +976,7 @@ export const insightsService = {
 
     return {
       attackers,
-      total_unique_ips: ipMap.size,
+      total_unique_ips: attackerMap.size,
     };
   },
 
