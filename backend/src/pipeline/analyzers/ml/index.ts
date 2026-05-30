@@ -8,13 +8,16 @@
  * - Types and configuration
  */
 
-export { MLAnalyzer, mlAnalyzer } from "./MLAnalyzer";
 export { MLClient, mlClient } from "./MLClient";
-
 // Feature extractors
-export { buildIpFeatures } from "./features/buildIpFeatures";
-export { buildUserFeatures } from "./features/buildUserFeatures";
-export { buildSessionFeatures } from "./features/buildSessionFeatures";
+import { extractIpFeatures } from "./features/buildIpFeatures";
+import { extractUserFeatures, extractUsername } from "./features/buildUserFeatures";
+import { extractSessionFeatures } from "./features/buildSessionFeatures";
+
+export const buildIpFeatures = extractIpFeatures;
+export const buildUserFeatures = extractUserFeatures;
+export const buildSessionFeatures = extractSessionFeatures;
+export { extractUsername };
 
 // Types
 export * from "./types/features.types";
