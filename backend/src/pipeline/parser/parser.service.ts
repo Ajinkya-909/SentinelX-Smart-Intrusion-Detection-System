@@ -5,19 +5,12 @@ import { jsonParser } from "./strategies/json.parser";
 import { keyValueParser } from "./strategies/keyvalue.parser";
 import { genericParser } from "./strategies/generic.parser";
 import { BaseParser } from "./strategies/base.parser";
-import { ParsedLog } from "./types";
-
-export interface BatchParseResult {
-  parsedLogs: ParsedLog[];
-  failedLines: string[];
-  successRate: number; // e.g., 0.95 for 95%
-  detectedTypeUsed: string;
-}
+import { BatchParseResult } from "./types";
 
 class ParserService {
   /**
    * Parse a single batch of preprocessed log lines
-   * Reports back success rate for Adaptive Parsing
+   * Reports back success rate for the Orchestrator's Adaptive Parsing Loop
    */
   async parseBatch(
     rawLines: string[],
@@ -28,7 +21,6 @@ class ParserService {
     try {
       const parser = this.selectParser(detectedType);
       
-      // Parse the batch (BaseParser returns detailed stats)
       const result = await parser.parse(rawLines);
       
       // Calculate strict success rate
@@ -42,7 +34,7 @@ class ParserService {
 
       return {
         parsedLogs: result.parsedLogs,
-        failedLines: result.failedLines.map(f => f.rawLine), // Extract just the raw strings for potential re-parsing
+        failedLines: result.failedLines.map(f => f.rawLine),
         successRate,
         detectedTypeUsed: detectedType
       };
@@ -55,12 +47,22 @@ class ParserService {
 
   private selectParser(detectedType: string): BaseParser {
     switch (detectedType) {
-      case "NGINX_ACCESS": return nginxParser;
-      case "SYSLOG": return syslogParser;
-      case "JSON": return jsonParser;
-      case "KEY_VALUE": return keyValueParser;
+      case "NGINX_ACCESS":
+      case "APACHE_LOG": // Map Apache to the Nginx parser since they share the "Combined" format
+        return nginxParser;
+      case "SYSLOG": 
+        return syslogParser;
+      case "JSON":
+      case "AWS_CLOUDTRAIL":
+      case "SURICATA_EVE":
+      case "DOCKER_JSON":
+        return jsonParser; // Our upgraded JSON parser handles all these envelopes
+      case "KEY_VALUE":
+      case "FIREWALL_LOG": // Firewall logs map perfectly to KV extraction
+        return keyValueParser;
       case "GENERIC":
-      default: return genericParser;
+      default: 
+        return genericParser;
     }
   }
 }

@@ -1,115 +1,137 @@
 import { BaseParser } from "./base.parser";
 import { ParsedLog } from "../types";
 
-/**
- * JSON Log Parser
- * Parses log entries in JSON format
- *
- * Expected format (one JSON object per line):
- * {"timestamp":"2024-01-15T10:30:00Z","level":"ERROR","message":"Database connection failed","ip":"192.168.1.1"}
- *
- * Flexible field mapping:
- * - timestamp: timestamp, time, created_at, date, ts
- * - level: level, severity, priority, log_level
- * - message: message, msg, text, event
- * - ip/source: ip, source_ip, src_ip, client_ip
- * - user: user, username, user_id, uid
- * - status: status, status_code, code
- */
 export class JsonParser extends BaseParser {
-  protected parserName = "JSON_PARSER";
-
-  /**
-   * Common field name variations
-   */
-  private readonly fieldMappings = {
-    timestamp: [
-      "timestamp",
-      "time",
-      "created_at",
-      "date",
-      "ts",
-      "@timestamp",
-      "datetime",
-    ],
-    level: ["level", "severity", "priority", "log_level", "loglevel"],
-    message: ["message", "msg", "text", "event", "content", "description"],
-    sourceIp: ["ip", "source_ip", "src_ip", "client_ip", "remote_addr"],
-    user: ["user", "username", "user_id", "uid", "actor"],
-    statusCode: ["status", "status_code", "code", "http_status"],
+  // Generic field aliases
+  private readonly genericMappings = {
+    timestamp: ["timestamp", "time", "created_at", "date", "ts", "@timestamp", "datetime", "EventTime"],
+    level: ["level", "severity", "priority", "log_level", "loglevel", "alert.severity"],
+    message: ["message", "msg", "text", "event", "content", "description", "eventName"],
+    sourceIp: ["ip", "source_ip", "src_ip", "client_ip", "remote_addr", "sourceIPAddress"],
+    user: ["user", "username", "user_id", "uid", "actor", "userIdentity.userName", "userIdentity.arn"],
+    statusCode: ["status", "status_code", "code", "http_status"]
   };
 
-  /**
-   * Parse single JSON log line
-   * @param line - Raw JSON log line
-   * @returns - ParsedLog or null if cannot parse
-   */
-  parseLine(line: string): ParsedLog | null {
+  // FIX 1: Changed from protected to public to match BaseParser signature
+  public parseLine(line: string): ParsedLog | null {
     try {
-      // Try to parse JSON
-      const json = this.safeJsonParse(line);
-      if (!json || typeof json !== "object") {
-        return null;
+      const json = JSON.parse(line);
+      if (!json || typeof json !== 'object') return null;
+
+      // 1. DOCKER ENVELOPE UNPACKER
+      if (json.log && (json.stream === 'stdout' || json.stream === 'stderr')) {
+        return {
+          timestamp: new Date(json.time || new Date()),
+          logLevel: this.inferDockerLevel(json.stream, json.log),
+          message: String(json.log).trim(),
+          raw: line,
+          metadata: {
+            wrapper: "docker",
+            container_id: json.container_id,
+            original_json: json
+          }
+        };
       }
 
-      // Extract fields using flexible mapping
-      const timestamp = this.extractField(json, this.fieldMappings.timestamp);
-      const level = this.extractField(json, this.fieldMappings.level);
-      const message = this.extractField(json, this.fieldMappings.message);
-      const sourceIp = this.extractField(json, this.fieldMappings.sourceIp);
-      const user = this.extractField(json, this.fieldMappings.user);
-      const statusCode = this.extractField(json, this.fieldMappings.statusCode);
-
-      // Require at least a message to consider it a valid log
-      if (!message) {
-        return null;
+      // 2. SURICATA EVE UNPACKER
+      if (json.event_type && json.alert) {
+        const suricataLog: ParsedLog = {
+          timestamp: new Date(json.timestamp || new Date()),
+          logLevel: json.alert.severity <= 2 ? "CRITICAL" : "HIGH",
+          message: `[SURICATA] ${json.alert.signature}`,
+          raw: line,
+          metadata: {
+            wrapper: "suricata",
+            event_type: json.event_type,
+            dest_ip: json.dest_ip,
+            dest_port: json.dest_port,
+            signature_id: json.alert.signature_id,
+            category: json.alert.category,
+            original_json: json
+          }
+        };
+        
+        // Fix for exactOptionalPropertyTypes
+        if (json.src_ip) suricataLog.sourceIp = String(json.src_ip);
+        return suricataLog;
       }
 
-      const validatedIp = sourceIp
-        ? this.validateIp(String(sourceIp))
-        : undefined;
-      const parsedUser = user ? String(user) : undefined;
-      const parsedStatusCode = statusCode
-        ? parseInt(String(statusCode), 10)
-        : undefined;
+      // 3. AWS CLOUDTRAIL UNPACKER
+      if (json.userIdentity && json.eventSource) {
+        const cloudTrailLog: ParsedLog = {
+          timestamp: new Date(json.eventTime || new Date()),
+          logLevel: json.errorCode || json.errorMessage ? "ERROR" : "INFO",
+          message: `[${json.eventSource}] ${json.eventName}`,
+          raw: line,
+          metadata: {
+            wrapper: "cloudtrail",
+            awsRegion: json.awsRegion,
+            errorCode: json.errorCode,
+            userAgent: json.userAgent,
+            requestParameters: json.requestParameters,
+            original_json: json
+          }
+        };
 
-      const parsedLog: ParsedLog = {
-        timestamp: timestamp ? this.parseTimestamp(timestamp) : new Date(),
-        logLevel: level ? String(level).toUpperCase() : "INFO",
-        message: String(message),
+        // Fix for exactOptionalPropertyTypes
+        if (json.sourceIPAddress) cloudTrailLog.sourceIp = String(json.sourceIPAddress);
+        
+        const userArn = json.userIdentity.arn || json.userIdentity.userName;
+        if (userArn) cloudTrailLog.user = String(userArn);
+
+        return cloudTrailLog;
+      }
+
+      // 4. GENERIC JSON EXTRACTION
+      const timestampRaw = this.extractField(json, this.genericMappings.timestamp);
+      const levelRaw = this.extractField(json, this.genericMappings.level);
+      const messageRaw = this.extractField(json, this.genericMappings.message) || JSON.stringify(json).substring(0, 200);
+      const sourceIpRaw = this.extractField(json, this.genericMappings.sourceIp);
+
+      const genericLog: ParsedLog = {
+        timestamp: timestampRaw ? new Date(timestampRaw) : new Date(),
+        logLevel: levelRaw ? String(levelRaw).toUpperCase() : "INFO",
+        message: String(messageRaw),
         raw: line,
         metadata: {
-          ...json, // Store the entire JSON as metadata
-        },
+          wrapper: "generic_json",
+          original_json: json
+        }
       };
 
-      // Only add optional fields if they have values
-      if (validatedIp) parsedLog.sourceIp = validatedIp;
-      if (parsedUser) parsedLog.user = parsedUser;
-      if (parsedStatusCode !== undefined)
-        parsedLog.statusCode = parsedStatusCode;
+      // FIX 2: Only assign optional properties if they actually exist to satisfy exactOptionalPropertyTypes
+      if (sourceIpRaw) {
+        genericLog.sourceIp = String(sourceIpRaw);
+      }
 
-      return parsedLog;
-    } catch (error) {
-      throw new Error(
-        `Failed to parse JSON log: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      return genericLog;
+
+    } catch (e) {
+      return null;
     }
   }
 
-  /**
-   * Extract field value from JSON object using multiple field name options
-   * @param obj - JSON object
-   * @param fieldNames - Array of possible field names
-   * @returns - Field value or undefined
-   */
-  private extractField(obj: Record<string, any>, fieldNames: string[]): any {
-    for (const fieldName of fieldNames) {
-      if (fieldName in obj) {
-        return obj[fieldName];
+  private extractField(obj: any, paths: string[]): any {
+    for (const path of paths) {
+      const keys = path.split('.');
+      let current = obj;
+      for (const key of keys) {
+        if (current === undefined || current === null) break;
+        current = current[key];
+      }
+      if (current !== undefined && current !== null && current !== "") {
+        return current;
       }
     }
     return undefined;
+  }
+
+  private inferDockerLevel(stream: string, logString: string): string {
+    if (stream === 'stderr') return "ERROR";
+    const lower = String(logString).toLowerCase();
+    if (lower.includes("error") || lower.includes("fail") || lower.includes("fatal")) return "ERROR";
+    if (lower.includes("warn")) return "WARN";
+    return "INFO";
   }
 }
 

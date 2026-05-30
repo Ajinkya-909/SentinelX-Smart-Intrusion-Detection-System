@@ -1,13 +1,4 @@
-/**
- * Parser Output Types
- * These are the transient structures used between Parser and Normalizer stages
- */
-
-/**
- * Parsed Log Entry
- * Intermediate structure output by parsers
- * NOT persisted to database - only exists in memory during pipeline execution
- */
+// Existing interfaces...
 export interface ParsedLog {
   timestamp: Date | string;
   logLevel: string;
@@ -16,13 +7,22 @@ export interface ParsedLog {
   user?: string;
   statusCode?: number;
   raw: string;
-  [key: string]: any; // Allow parser-specific metadata
+  [key: string]: any;
 }
 
-/**
- * Parser Result
- * Return type from parse() operations
- */
+export interface ParseError {
+  lineNumber: number;
+  rawLine: string;
+  error: string;
+}
+
+export interface ParserStats {
+  totalLines: number;
+  successfullyParsed: number;
+  failedToParse: number;
+  averageParseTimeMs: number;
+}
+
 export interface ParserResult {
   success: boolean;
   parsedLogs: ParsedLog[];
@@ -30,23 +30,10 @@ export interface ParserResult {
   stats: ParserStats;
 }
 
-/**
- * Parse Error
- * Tracks lines that failed to parse
- */
-export interface ParseError {
-  lineNumber: number;
-  rawLine: string;
-  error: string;
-}
-
-/**
- * Parser Statistics
- * Metrics about parsing operation
- */
-export interface ParserStats {
-  totalLines: number;
-  successfullyParsed: number;
-  failedToParse: number;
-  averageParseTimeMs: number;
+// Add this new interface for the Orchestrator's Adaptive Loop
+export interface BatchParseResult {
+  parsedLogs: ParsedLog[];
+  failedLines: string[]; // Just the raw strings for re-evaluation
+  successRate: number;   // e.g., 0.95
+  detectedTypeUsed: string;
 }
