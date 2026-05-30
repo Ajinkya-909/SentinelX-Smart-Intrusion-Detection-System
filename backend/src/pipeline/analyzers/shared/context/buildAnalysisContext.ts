@@ -1,20 +1,8 @@
-import {
-  AnalysisContext,
-  NormalizedLog,
-  SessionGroup,
-} from "./AnalysisContext";
+import { AnalysisContext, NormalizedLog, SessionGroup } from "./AnalysisContext";
 import { grouping } from "../utils/grouping.util";
 import { timeline } from "../utils/timeline.util";
 
-/**
- * Build the Analysis Context - precomputes all indexes
- * This is called ONCE at the start of analyzer execution
- * All detectors reuse this context
- */
-export const buildAnalysisContext = (
-  logs: NormalizedLog[],
-  jobId: string,
-): AnalysisContext => {
+export const buildAnalysisContext = (logs: NormalizedLog[], jobId: string): AnalysisContext => {
   const context: AnalysisContext = {
     logs,
     jobId,
@@ -43,45 +31,31 @@ export const buildAnalysisContext = (
     },
   };
 
-  // ===== 1. BUILD ENTITY TIMELINES =====
+  // ===== 1. TIMELINES & 3. MAPPINGS =====
   for (const log of logs) {
-    const userId = log.metadata?.user_id || "unknown";
+    const userId = log.metadata?.actor?.username || "unknown"; // FIXED
+    const ip = log.ip_address || "unknown";
+    
     const userKey = `user_${userId}`;
-    const ipKey = `ip_${log.ip_address}`;
+    const ipKey = `ip_${ip}`;
 
-    if (!context.entityTimelines.has(userKey)) {
-      context.entityTimelines.set(userKey, []);
-    }
+    if (!context.entityTimelines.has(userKey)) context.entityTimelines.set(userKey, []);
     context.entityTimelines.get(userKey)!.push(log);
 
-    if (!context.entityTimelines.has(ipKey)) {
-      context.entityTimelines.set(ipKey, []);
-    }
+    if (!context.entityTimelines.has(ipKey)) context.entityTimelines.set(ipKey, []);
     context.entityTimelines.get(ipKey)!.push(log);
+
+    // Mappings
+    if (!context.userIpMappings.has(userId)) context.userIpMappings.set(userId, new Set());
+    context.userIpMappings.get(userId)!.add(ip);
+
+    if (!context.ipUserMappings.has(ip)) context.ipUserMappings.set(ip, new Set());
+    context.ipUserMappings.get(ip)!.add(userId);
   }
 
   // ===== 2. SORT ALL TIMELINES =====
   for (const timelineList of context.entityTimelines.values()) {
-    timelineList.sort(
-      (a, b) =>
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-    );
-  }
-
-  // ===== 3. BUILD USER-IP MAPPINGS =====
-  for (const log of logs) {
-    const userId = log.metadata?.user_id || "unknown";
-    const ip = log.ip_address;
-
-    if (!context.userIpMappings.has(userId)) {
-      context.userIpMappings.set(userId, new Set());
-    }
-    context.userIpMappings.get(userId)!.add(ip);
-
-    if (!context.ipUserMappings.has(ip)) {
-      context.ipUserMappings.set(ip, new Set());
-    }
-    context.ipUserMappings.get(ip)!.add(userId);
+    timelineList.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   }
 
   // ===== 4. BUILD TIME BUCKETS (1-minute) =====
@@ -90,49 +64,38 @@ export const buildAnalysisContext = (
     bucket.setSeconds(0, 0);
     const bucketKey = bucket.toISOString();
 
-    if (!context.timeBuckets.has(bucketKey)) {
-      context.timeBuckets.set(bucketKey, []);
-    }
+    if (!context.timeBuckets.has(bucketKey)) context.timeBuckets.set(bucketKey, []);
     context.timeBuckets.get(bucketKey)!.push(log);
   }
 
-  // ===== 5. CLASSIFY AUTH EVENTS =====
+  // ===== 5. CLASSIFY AUTH EVENTS (Context-Aware) =====
   for (const log of logs) {
-    if (
-      log.event_type === "auth_success" ||
-      log.event_type === "login_success"
-    ) {
+    // Rely explicitly on the new normalizer's security metadata
+    if (log.metadata?.security !== undefined || log.event_type.includes("LOGIN")) {
       context.authEvents.push(log);
-      context.successfulAuthEvents.push(log);
-    } else if (
-      log.event_type === "auth_failed" ||
-      log.event_type === "login_failed"
-    ) {
-      context.authEvents.push(log);
-      context.failedAuthEvents.push(log);
+      if (log.metadata?.security?.authSuccess === true) {
+        context.successfulAuthEvents.push(log);
+      } else {
+        context.failedAuthEvents.push(log);
+      }
     }
   }
 
   // ===== 6. CLASSIFY ADMIN EVENTS =====
   for (const log of logs) {
-    if (
-      log.endpoint?.includes("/admin") ||
-      log.endpoint?.includes("/api/admin") ||
-      log.metadata?.role === "admin"
-    ) {
+    const endpoint = log.metadata?.action?.endpoint || "";
+    const username = log.metadata?.actor?.username || "";
+    if (endpoint.includes("/admin") || endpoint.includes("/api/admin") || username === "admin" || username === "root") {
       context.adminAccessEvents.push(log);
     }
   }
 
   // ===== 7. CLASSIFY CRITICAL EVENTS =====
   for (const log of logs) {
-    if (
-      log.severity === "CRITICAL" ||
-      log.severity === "HIGH" ||
-      log.status_code >= 500 ||
-      (log.status_code >= 400 && log.status_code < 500)
-    ) {
+    const statusCode = log.metadata?.request?.statusCode || 0;
+    if (log.severity === "CRITICAL" || log.severity === "HIGH" || statusCode >= 500) {
       context.criticalEvents.push(log);
+      context.statistics.totalErrors++;
     }
   }
 
@@ -142,17 +105,11 @@ export const buildAnalysisContext = (
     const sorted = timeline.sortByTimestamp(endpointLogs);
     if (sorted.length === 0) continue;
 
-    const successCount = endpointLogs.filter(
-      (log) => log.status_code < 400,
-    ).length;
-    const failureCount = endpointLogs.filter(
-      (log) => log.status_code >= 400,
-    ).length;
-    const statusCodes = new Set(endpointLogs.map((log) => log.status_code));
+    const successCount = endpointLogs.filter(log => (log.metadata?.request?.statusCode || 200) < 400).length;
+    const failureCount = endpointLogs.filter(log => (log.metadata?.request?.statusCode || 200) >= 400).length;
+    const statusCodes = new Set(endpointLogs.map(log => log.metadata?.request?.statusCode || 0).filter(Boolean));
 
-    if (!context.endpointAccess.has(endpoint)) {
-      context.endpointAccess.set(endpoint, []);
-    }
+    if (!context.endpointAccess.has(endpoint)) context.endpointAccess.set(endpoint, []);
 
     context.endpointAccess.get(endpoint)!.push({
       endpoint,
@@ -165,60 +122,15 @@ export const buildAnalysisContext = (
     });
   }
 
-  // ===== 9. CALCULATE REQUEST FREQUENCY =====
-  const userGroups = grouping.groupByUser(logs);
-  for (const [userId, userLogs] of userGroups) {
-    context.requestFrequency.set(`user_${userId}`, userLogs.length);
-  }
-
-  const ipGroups = grouping.groupByIp(logs);
-  for (const [ip, ipLogs] of ipGroups) {
-    context.requestFrequency.set(`ip_${ip}`, ipLogs.length);
-  }
-
   // ===== 10. BUILD SESSIONS =====
   context.sessions = buildSessionGroups(logs);
-
-  // ===== 11. CALCULATE STATISTICS =====
-  if (logs.length > 0) {
-    context.statistics.totalErrors = logs.filter(
-      (log) => log.status_code >= 400,
-    ).length;
-
-    const responseTimes = logs
-      .filter((log) => log.response_time_ms !== undefined)
-      .map((log) => log.response_time_ms);
-
-    if (responseTimes.length > 0) {
-      context.statistics.avgResponseTime =
-        responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length;
-      const variance =
-        responseTimes.reduce(
-          (sum, time) =>
-            sum + Math.pow(time - context.statistics.avgResponseTime, 2),
-          0,
-        ) / responseTimes.length;
-      context.statistics.stdDevResponseTime = Math.sqrt(variance);
-    }
-
-    // Calculate per-minute stats
-    const timeBucketCounts: number[] = [];
-    for (const bucket of context.timeBuckets.values()) {
-      timeBucketCounts.push(bucket.length);
-    }
-
-    if (timeBucketCounts.length > 0) {
-      context.statistics.requestsPerMinute =
-        timeBucketCounts.reduce((a, b) => a + b, 0) / timeBucketCounts.length;
-    }
-  }
 
   return context;
 };
 
 /**
  * Build session groups from logs
- * A session is a sequence of events from the same user
+ * Now natively supports the explicit 'sessionId' extracted by the Normalizer
  */
 const buildSessionGroups = (logs: NormalizedLog[]): SessionGroup[] => {
   const sessions: SessionGroup[] = [];
@@ -227,61 +139,52 @@ const buildSessionGroups = (logs: NormalizedLog[]): SessionGroup[] => {
   for (const [userId, userLogs] of userGroups) {
     const sorted = timeline.sortByTimestamp(userLogs);
 
-    // Simple session grouping: group consecutive events from same IP
     let currentSession: NormalizedLog[] = [];
     let lastIp = "";
+    let lastSessionId = "";
     let lastTimestamp = new Date(0);
 
     for (const log of sorted) {
-      const timeDiff =
-        new Date(log.timestamp).getTime() - lastTimestamp.getTime();
-      const timeDiffMinutes = timeDiff / (1000 * 60);
+      const timeDiffMinutes = (new Date(log.timestamp).getTime() - lastTimestamp.getTime()) / (1000 * 60);
+      const currentSessionId = log.metadata?.actor?.sessionId || "";
 
-      // Start new session if IP changed or > 30 minutes gap
-      if (log.ip_address !== lastIp || timeDiffMinutes > 30) {
-        if (currentSession.length > 0) {
-          sessions.push(createSessionGroup(userId, currentSession));
-        }
+      // Break session IF explicit Session ID changed, OR IP changed, OR 30 min gap
+      const isNewSession = 
+        (currentSessionId && currentSessionId !== lastSessionId && lastSessionId !== "") ||
+        (log.ip_address !== lastIp && lastIp !== "") || 
+        timeDiffMinutes > 30;
+
+      if (isNewSession) {
+        if (currentSession.length > 0) sessions.push(createSessionGroup(userId, currentSession));
         currentSession = [log];
-        lastIp = log.ip_address;
       } else {
         currentSession.push(log);
       }
 
+      lastIp = log.ip_address;
+      lastSessionId = currentSessionId || lastSessionId;
       lastTimestamp = new Date(log.timestamp);
     }
 
-    // Don't forget the last session
-    if (currentSession.length > 0) {
-      sessions.push(createSessionGroup(userId, currentSession));
-    }
+    if (currentSession.length > 0) sessions.push(createSessionGroup(userId, currentSession));
   }
 
   return sessions;
 };
 
-/**
- * Create a session group object
- */
-const createSessionGroup = (
-  userId: string,
-  logs: NormalizedLog[],
-): SessionGroup => {
+const createSessionGroup = (userId: string, logs: NormalizedLog[]): SessionGroup => {
   const sorted = timeline.sortByTimestamp(logs);
-  if (sorted.length === 0) {
-    throw new Error("createSessionGroup called with empty logs array");
-  }
-
-  const ipAddresses = new Set(logs.map((log) => log.ip_address));
-  const userAgents = new Set(logs.map((log) => log.user_agent));
+  
+  // Explicit Session ID from log, or fallback to generated ID
+  const explicitSessionId = logs.find(l => l.metadata?.actor?.sessionId)?.metadata?.actor?.sessionId;
 
   return {
-    sessionId: `session_${userId}_${new Date(sorted[0]!.timestamp).getTime()}`,
+    sessionId: explicitSessionId || `session_${userId}_${new Date(sorted[0]!.timestamp).getTime()}`,
     userId,
     startTime: new Date(sorted[0]!.timestamp),
     endTime: new Date(sorted[sorted.length - 1]!.timestamp),
-    ipAddresses,
-    userAgents,
+    ipAddresses: new Set(logs.map(log => log.ip_address).filter(Boolean)),
+    userAgents: new Set(logs.map(log => log.metadata?.client?.userAgent).filter(Boolean) as string[]),
     events: logs,
   };
 };

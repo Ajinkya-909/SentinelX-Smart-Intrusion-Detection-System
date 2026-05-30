@@ -5,67 +5,57 @@ import { FindingSeverity } from "../../shared/findings/FindingSeverity";
 import { createFinding } from "../../shared/findings/createFinding";
 import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
 
-/**
- * DETECTOR 8: Path Traversal Attempt
- *
- * Triggers when request contains path traversal patterns:
- * - ../
- * - ..\\
- * - %2e%2e/
- * - %2e%2e%5c
- */
 export const pathTraversalDetector: IDetector = {
   async detect(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     const findings: AnalyzerFinding[] = [];
     const config = loadAnalyzerConfig();
 
-    if (ctx.logs.length === 0) return findings;
-
     for (const log of ctx.logs) {
-      // Check request path for traversal patterns
-      const checkString = `${log.endpoint || ""} ${log.message}`.toLowerCase();
+      if (!log.event_type.startsWith("HTTP_")) continue;
+
+      // Path traversal happens explicitly in URLs or File Paths
+      const targetFields = [
+        log.metadata?.request?.url,
+        log.metadata?.action?.endpoint,
+        ...(log.metadata?.request?.query ? Object.values(log.metadata.request.query) : [])
+      ].filter(Boolean).map(String);
+
+      const checkString = targetFields.join(" ").toLowerCase();
 
       for (const pattern of config.maliciousPayload.pathTraversalPatterns) {
         if (checkString.includes(pattern.toLowerCase())) {
-          const accessSuccessful =
-            log.status_code === 200 || log.status_code === 206;
+          
+          const statusCode = log.metadata?.request?.statusCode;
+          const isSuccessful = statusCode === 200;
 
           findings.push(
             createFinding({
               jobId: ctx.jobId,
               analyzer: "rule",
               finding_type: "MALICIOUS_PAYLOAD_PATH_TRAVERSAL",
-              severity: FindingSeverity.HIGH,
-              confidence: 0.92,
-              title: "Path Traversal Attack Detected",
-              summary: "Attempt to access files outside intended directory",
+              severity: isSuccessful ? FindingSeverity.CRITICAL : FindingSeverity.HIGH,
+              confidence: 0.95,
+              title: "Directory Traversal Attempt",
+              summary: `Path traversal attempt detected from ${log.ip_address || 'unknown IP'}`,
               log_references: [log.id],
               affected_entities: {
                 source_ip: log.ip_address,
-                target_endpoint: log.endpoint,
+                target_endpoint: log.metadata?.action?.endpoint || "unknown",
               },
               evidence: {
-                request_path: log.endpoint,
                 pattern_matched: pattern,
-                response_code: log.status_code,
-                file_access_successful: accessSuccessful,
+                payload: checkString.substring(0, 200),
+                response_code: statusCode,
+                read_likely_successful: isSuccessful,
               },
-              metadata: {
-                rule_id: "rule_4_3",
-                rule_version: "1.0",
-              },
-              recommendation:
-                "Block IP immediately. Review file access logs for data exfiltration. Verify system file integrity.",
-            }),
+              metadata: { rule_id: "rule_pt_1" },
+              recommendation: "CRITICAL: If HTTP 200, an attacker may have read arbitrary files on the server. Block IP immediately.",
+            })
           );
-
-          // Only report once per log
           break;
         }
       }
     }
-
     return findings;
   },
 };
-

@@ -3,89 +3,62 @@ import { AnalyzerFinding } from "../../shared/findings/Finding.types";
 import { AnalysisContext } from "../../shared/context/AnalysisContext";
 import { FindingSeverity } from "../../shared/findings/FindingSeverity";
 import { createFinding } from "../../shared/findings/createFinding";
-import { timeline } from "../../shared/utils/timeline.util";
 import { grouping } from "../../shared/utils/grouping.util";
-import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
 
-/**
- * DETECTOR 3: Account Takeover Indicator
- *
- * Triggers when:
- * - SAME user_id
- * - Different IP address
- * - Different user_agent
- * - Successful login after previous session
- * - WITHIN 60 minutes
- */
 export const accountTakeoverDetector: IDetector = {
   async detect(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     const findings: AnalyzerFinding[] = [];
-    const config = loadAnalyzerConfig();
 
-    if (ctx.successfulAuthEvents.length < 2) return findings;
+    const authLogs = ctx.logs.filter(log => log.event_type.includes("LOGIN"));
+    if (authLogs.length === 0) return findings;
 
-    // Group successful logins by user
-    const byUser = grouping.groupByUser(ctx.successfulAuthEvents);
+    // Group by User to track the sequence of their specific logins
+    const authByUser = grouping.groupByUser(authLogs);
 
-    for (const [userId, logs] of byUser) {
-      if (logs.length < 2) continue;
+    for (const [username, logs] of authByUser) {
+      if (!username) continue;
 
-      const sorted = timeline.sortByTimestamp(logs);
+      // Sort temporally (oldest to newest)
+      const sortedLogs = logs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-      // Compare consecutive logins
-      for (let i = 1; i < sorted.length; i++) {
-        const prevLog = sorted[i - 1]!;
-        const currLog = sorted[i]!;
+      let consecutiveFailures = 0;
+      const failedLogIds: string[] = [];
 
-        const timeDiff =
-          new Date(currLog.timestamp).getTime() -
-          new Date(prevLog.timestamp).getTime();
-        const timeDiffMinutes = timeDiff / (1000 * 60);
+      for (const log of sortedLogs) {
+        const isSuccess = log.metadata?.security?.authSuccess;
 
-        const prevIp = prevLog.ip_address;
-        const currIp = currLog.ip_address;
-        const prevAgent = prevLog.user_agent;
-        const currAgent = currLog.user_agent;
-
-        const ipChanged = prevIp !== currIp;
-        const agentChanged = prevAgent !== currAgent;
-        const timeGapValid =
-          timeDiffMinutes > config.accountTakeover.minTimeGapMinutes &&
-          timeDiffMinutes <= config.accountTakeover.ipChangeWindow / 60;
-
-        if (ipChanged && agentChanged && timeGapValid) {
-          findings.push(
-            createFinding({
-              jobId: ctx.jobId,
-              analyzer: "rule",
-              finding_type: "ACCOUNT_TAKEOVER_INDICATOR",
-              severity: FindingSeverity.MEDIUM,
-              confidence: 0.8,
-              title: "Possible Account Takeover",
-              summary: "User's IP and browser changed between sessions",
-              log_references: [prevLog.id, currLog.id],
-              affected_entities: {
-                username: userId,
-                previous_ip: prevIp,
-                new_ip: currIp,
-                previous_agent: prevAgent,
-                new_agent: currAgent,
-              },
-              evidence: {
-                previous_session_end: prevLog.timestamp,
-                new_session_start: currLog.timestamp,
-                time_gap_minutes: timeDiffMinutes,
-                ip_different: true,
-                agent_different: true,
-              },
-              metadata: {
-                rule_id: "rule_2_1",
-                rule_version: "1.0",
-              },
-              recommendation:
-                "Notify user of suspicious login. Request email verification or MFA. Review recent account activity.",
-            }),
-          );
+        if (isSuccess === false) {
+          consecutiveFailures++;
+          failedLogIds.push(log.id);
+        } else if (isSuccess === true) {
+          // If we see a success AFTER a chain of 5+ failures, the account was likely just breached
+          if (consecutiveFailures >= 5) {
+            findings.push(
+              createFinding({
+                jobId: ctx.jobId,
+                analyzer: "rule",
+                finding_type: "ACCOUNT_TAKEOVER_INDICATOR",
+                severity: FindingSeverity.CRITICAL,
+                confidence: 0.90,
+                title: "Possible Account Takeover (ATO)",
+                summary: `User '${username}' successfully logged in immediately after ${consecutiveFailures} consecutive failures.`,
+                log_references: [...failedLogIds, log.id],
+                affected_entities: {
+                  username: username,
+                  compromised_ip: log.ip_address || "unknown",
+                },
+                evidence: {
+                  consecutive_failures_before_success: consecutiveFailures,
+                  successful_login_timestamp: log.timestamp,
+                },
+                metadata: { rule_id: "rule_ato_1" },
+                recommendation: "CRITICAL: Force password reset and terminate active sessions for this user. Verify if MFA was bypassed.",
+              })
+            );
+          }
+          // Reset tracker after a success
+          consecutiveFailures = 0;
+          failedLogIds.length = 0;
         }
       }
     }
@@ -93,4 +66,3 @@ export const accountTakeoverDetector: IDetector = {
     return findings;
   },
 };
-

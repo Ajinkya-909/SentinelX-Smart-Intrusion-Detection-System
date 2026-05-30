@@ -3,72 +3,61 @@ import { AnalyzerFinding } from "../../shared/findings/Finding.types";
 import { AnalysisContext } from "../../shared/context/AnalysisContext";
 import { FindingSeverity } from "../../shared/findings/FindingSeverity";
 import { createFinding } from "../../shared/findings/createFinding";
-import { slidingWindow } from "../../shared/utils/slidingWindow.util";
-import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
+import { grouping } from "../../shared/utils/grouping.util";
+import { statistics } from "../../shared/utils/statistics.util";
 
-/**
- * DETECTOR 6: Abnormal Intervals
- *
- * Triggers when:
- * - Requests have abnormally short intervals (< 500ms)
- * - Indicates automated attack or bot activity
- */
 export const abnormalIntervalsDetector: IDetector = {
   async detect(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     const findings: AnalyzerFinding[] = [];
-    const config = loadAnalyzerConfig();
 
-    if (ctx.logs.length < 2) return findings;
+    const logsByIp = grouping.groupByIp(ctx.logs);
 
-    // Check by IP for rapid-fire requests
-    for (const [ipKey, logs] of ctx.entityTimelines) {
-      if (!ipKey.startsWith("ip_")) continue;
+    for (const [ip, logs] of logsByIp) {
+      if (ip === "unknown") continue;
+      
+      // We need a decent sample size to prove automated behavior
+      if (logs.length < 15) continue;
 
-      if (logs.length < 2) continue;
+      const sortedLogs = logs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      const intervals: number[] = [];
 
-      const intervals = slidingWindow.getIntervals(logs);
+      // Calculate the time difference (in seconds) between every consecutive request
+      for (let i = 1; i < sortedLogs.length; i++) {
+        const curr = sortedLogs[i];
+        const prev = sortedLogs[i - 1];
+        if (!curr || !prev) continue;
+        const diff = (new Date(curr.timestamp).getTime() - new Date(prev.timestamp).getTime()) / 1000;
+        intervals.push(diff);
+      }
 
-      // Count how many intervals are below threshold
-      const rapidIntervals = intervals.filter(
-        (interval) => interval < config.temporal.intervals.minIntervalMs / 1000,
-      );
+      const meanInterval = statistics.mean(intervals);
+      const stddev = statistics.stddev(intervals);
 
-      if (rapidIntervals.length > 0) {
-        const ip = ipKey.replace("ip_", "");
-        const avgInterval =
-          intervals.length > 0
-            ? intervals.reduce((a, b) => a + b, 0) / intervals.length
-            : 0;
-
+      // If the standard deviation is extremely low (less than 1.5 seconds) AND the mean interval is greater than 5 seconds
+      // it means the script is polling/beaconing exactly on a rigid timer.
+      if (stddev < 1.5 && meanInterval > 5) {
         findings.push(
           createFinding({
             jobId: ctx.jobId,
             analyzer: "temporal",
             finding_type: "ABNORMAL_INTERVALS",
-            severity: FindingSeverity.MEDIUM,
-            confidence: 0.8,
-            title: "Abnormally Short Request Intervals",
-            summary: `${rapidIntervals.length} requests from ${ip} with intervals < 500ms`,
-            log_references: logs.slice(0, 30).map((log) => log.id),
+            severity: FindingSeverity.HIGH,
+            confidence: 0.98, // Mathematics makes this a near certainty
+            title: "Automated Beaconing / Bot Behavior",
+            summary: `IP ${ip} is making requests at mathematically perfect intervals (every ~${Math.round(meanInterval)}s).`,
+            log_references: sortedLogs.slice(0, 10).map((log) => log.id),
             affected_entities: {
-              source_ip: ip,
-              rapid_request_count: rapidIntervals.length,
+              ip_address: ip,
             },
             evidence: {
-              rapid_intervals_count: rapidIntervals.length,
-              total_intervals: intervals.length,
-              min_interval_ms: Math.round(Math.min(...intervals) * 1000),
-              avg_interval_ms: Math.round(avgInterval * 1000),
-              threshold_ms: config.temporal.intervals.minIntervalMs,
+              total_requests: logs.length,
+              mean_interval_seconds: Math.round(meanInterval * 100) / 100,
+              standard_deviation: Math.round(stddev * 1000) / 1000,
+              is_rigid_timer: true
             },
-            metadata: {
-              rule_id: "temp_2_4",
-              rule_version: "1.0",
-              threshold_ms: config.temporal.intervals.minIntervalMs,
-            },
-            recommendation:
-              "Investigate for bot/automated attack. Implement rate limiting. Consider IP blocking.",
-          }),
+            metadata: { rule_id: "temp_3_2" },
+            recommendation: "Block IP immediately. This is highly indicative of Command and Control (C2) beaconing, a scraper bot, or a scheduled malicious script.",
+          })
         );
       }
     }
@@ -76,4 +65,3 @@ export const abnormalIntervalsDetector: IDetector = {
     return findings;
   },
 };
-

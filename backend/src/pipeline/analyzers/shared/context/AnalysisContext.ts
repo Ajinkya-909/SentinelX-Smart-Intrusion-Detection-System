@@ -1,22 +1,24 @@
+// Define the new nested metadata structure so the Analyzers know what they are looking at
+export interface NormalizedLogMetadata {
+  action?: { type?: string; endpoint?: string; method?: string; success?: boolean; error?: string };
+  actor?: { username?: string; sessionId?: string };
+  request?: { statusCode?: number; url?: string; headers?: any };
+  security?: { authenticated?: boolean; authSuccess?: boolean; failureReason?: string };
+  client?: { ipAddress?: string; userAgent?: string };
+  parserMetadata?: { bytes?: number; wrapper?: string; original_json?: any; [key: string]: any };
+  raw: string;
+}
+
 export interface NormalizedLog {
-  id: string;
-  jobId: string;
-  raw_content: string;
-  log_type: string;
-  timestamp: string;
+  id: string;         // Added by DB
+  job_id: string;     // Matches DB schema
+  timestamp: string | Date;
+  source: string;     // e.g., NGINX_ACCESS, SYSLOG
+  event_type: string; // e.g., HTTP_GET, LOGIN_FAILED
   ip_address: string;
-  user_agent: string;
-  endpoint: string;
-  http_method: string;
-  status_code: number;
-  response_time_ms: number;
-  request_size_bytes: number;
-  response_size_bytes: number;
-  event_type: string;
-  severity: string;
-  message: string;
-  metadata: Record<string, any>;
-  created_at: string;
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
+  metadata: NormalizedLogMetadata;
+  message?: string;   // Optional fallback
 }
 
 export interface EventSequence {
@@ -57,49 +59,22 @@ export interface ErrorRecord {
 }
 
 export interface AnalysisContext {
-  // ===== RAW LOGS =====
   logs: NormalizedLog[];
   jobId: string;
-
-  // ===== PRECOMPUTED INDEXES =====
-
-  // Timeline by entity (user or IP)
-  entityTimelines: Map<string, NormalizedLog[]>; // key: "user_{userId}" or "ip_{ipAddress}"
-
-  // Event sequences by entity
+  entityTimelines: Map<string, NormalizedLog[]>;
   eventSequences: Map<string, EventSequence[]>;
-
-  // Session groupings
   sessions: SessionGroup[];
-
-  // Endpoint access patterns
   endpointAccess: Map<string, EndpointAccessRecord[]>;
-
-  // Time-bucketed events (1-minute buckets)
-  timeBuckets: Map<string, NormalizedLog[]>; // key: "2026-05-23T10:00:00Z"
-
-  // User-IP relationships
-  userIpMappings: Map<string, Set<string>>; // userId -> set of IPs
-  ipUserMappings: Map<string, Set<string>>; // IP -> set of userIds
-
-  // Error patterns
+  timeBuckets: Map<string, NormalizedLog[]>;
+  userIpMappings: Map<string, Set<string>>;
+  ipUserMappings: Map<string, Set<string>>;
   errorPatterns: Map<string, ErrorRecord[]>;
-
-  // Request frequency maps
-  requestFrequency: Map<string, number>; // entity -> count
-
-  // Authentication events
+  requestFrequency: Map<string, number>;
   authEvents: NormalizedLog[];
   failedAuthEvents: NormalizedLog[];
   successfulAuthEvents: NormalizedLog[];
-
-  // Admin/privilege events
   adminAccessEvents: NormalizedLog[];
-
-  // Critical events
   criticalEvents: NormalizedLog[];
-
-  // Statistical precomputation
   statistics: {
     totalRequests: number;
     totalErrors: number;
@@ -107,6 +82,6 @@ export interface AnalysisContext {
     errorsPerMinute: number;
     avgResponseTime: number;
     stdDevResponseTime: number;
-    rollingWindows: Map<string, number[]>; // key: "ip_requests", value: [counts per minute]
+    rollingWindows: Map<string, number[]>;
   };
 }

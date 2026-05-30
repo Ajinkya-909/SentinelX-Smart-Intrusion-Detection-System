@@ -3,74 +3,72 @@ import { AnalyzerFinding } from "../../shared/findings/Finding.types";
 import { AnalysisContext } from "../../shared/context/AnalysisContext";
 import { FindingSeverity } from "../../shared/findings/FindingSeverity";
 import { createFinding } from "../../shared/findings/createFinding";
-import { timeline } from "../../shared/utils/timeline.util";
+import { grouping } from "../../shared/utils/grouping.util";
 import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
 
-/**
- * DETECTOR 5: Long Session
- *
- * Triggers when:
- * - Session duration exceeds baseline by 3x multiplier
- * - Indicates potential persistence/backdoor behavior
- */
 export const longSessionDetector: IDetector = {
   async detect(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     const findings: AnalyzerFinding[] = [];
     const config = loadAnalyzerConfig();
 
-    if (ctx.sessions.length === 0) return findings;
+    if (ctx.logs.length === 0) return findings;
 
-    // Calculate session durations
-    const durations: number[] = [];
-    for (const session of ctx.sessions) {
-      const durationSeconds =
-        (session.endTime.getTime() - session.startTime.getTime()) / 1000;
-      durations.push(durationSeconds);
+    // Group logs by explicit Session ID rather than just IP (since IPs can be shared via NAT)
+    const logsBySession = new Map<string, any[]>();
+    for (const log of ctx.logs) {
+      const sid = log.metadata?.actor?.sessionId ?? "unknown";
+      if (!logsBySession.has(sid)) logsBySession.set(sid, []);
+      logsBySession.get(sid)!.push(log);
     }
 
-    if (durations.length < 2) return findings;
+    for (const [sessionId, logs] of logsBySession) {
+      if (!sessionId || sessionId === "unknown" || sessionId === "undefined") continue;
 
-    // Calculate baseline
-    const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
-    const threshold = avgDuration * config.temporal.session.durationMultiplier;
+      // Ensure logs are sorted chronologically
+      const sortedLogs = logs.sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-    // Find long sessions
-    for (const session of ctx.sessions) {
-      const durationSeconds =
-        (session.endTime.getTime() - session.startTime.getTime()) / 1000;
+      if (sortedLogs.length === 0) continue;
+      const firstEvent = new Date(sortedLogs[0]!.timestamp).getTime();
+      const lastEvent = new Date(sortedLogs[sortedLogs.length - 1]!.timestamp).getTime();
+      
+      // Calculate session duration in seconds
+      const durationSeconds = (lastEvent - firstEvent) / 1000;
 
-      if (durationSeconds >= threshold) {
+      // If the session has been continuously active longer than the maximum allowed threshold (e.g., 24 hours)
+      const maxDurationSeconds = (config.temporal as any).longSession?.maxDurationSeconds ?? 24 * 3600;
+      if (durationSeconds >= maxDurationSeconds) {
+        
+        // Grab the username and IP associated with this long session
+        const username = sortedLogs[0].metadata?.actor?.username || "unknown";
+        const ip = sortedLogs[0].ip_address || "unknown";
+
         findings.push(
           createFinding({
             jobId: ctx.jobId,
             analyzer: "temporal",
             finding_type: "LONG_SESSION",
             severity: FindingSeverity.MEDIUM,
-            confidence: 0.72,
-            title: "Abnormally Long Session Detected",
-            summary: `User ${session.userId} maintained active session for ${Math.round(durationSeconds / 3600)} hours`,
-            log_references: session.events.slice(0, 30).map((log) => log.id),
+            confidence: 0.85,
+            title: "Unnaturally Long Session Detected",
+            summary: `Session for user '${username}' has been continuously active for ${Math.round(durationSeconds / 3600)} hours.`,
+            log_references: [sortedLogs[0].id, sortedLogs[sortedLogs.length - 1].id], // Link the start and end logs
             affected_entities: {
-              username: session.userId,
-              session_id: session.sessionId,
-              duration_seconds: durationSeconds,
+              session_id: sessionId,
+              username: username,
+              ip_address: ip
             },
             evidence: {
-              session_duration_hours: Math.round(durationSeconds / 3600),
-              session_start: session.startTime.toISOString(),
-              session_end: session.endTime.toISOString(),
-              baseline_duration_seconds: Math.round(avgDuration),
-              multiplier:
-                Math.round((durationSeconds / avgDuration) * 100) / 100,
+              session_duration_seconds: durationSeconds,
+              session_start: sortedLogs[0].timestamp,
+              last_activity: sortedLogs[sortedLogs.length - 1].timestamp,
+              total_events_in_session: sortedLogs.length
             },
-            metadata: {
-              rule_id: "temp_2_3",
-              rule_version: "1.0",
-              threshold_multiplier: config.temporal.session.durationMultiplier,
+            metadata: { 
+              rule_id: "temp_3_1",
+              threshold_seconds: maxDurationSeconds
             },
-            recommendation:
-              "Check for persistence mechanism. Review session activity. Verify with user.",
-          }),
+            recommendation: "Force expire this session token. Investigate if the session was hijacked or if the application lacks proper timeout controls.",
+          })
         );
       }
     }
@@ -78,4 +76,3 @@ export const longSessionDetector: IDetector = {
     return findings;
   },
 };
-

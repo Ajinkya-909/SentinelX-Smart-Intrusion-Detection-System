@@ -3,16 +3,9 @@ import { AnalyzerFinding } from "../../shared/findings/Finding.types";
 import { AnalysisContext } from "../../shared/context/AnalysisContext";
 import { FindingSeverity } from "../../shared/findings/FindingSeverity";
 import { createFinding } from "../../shared/findings/createFinding";
-import { slidingWindow } from "../../shared/utils/slidingWindow.util";
+import { grouping } from "../../shared/utils/grouping.util";
 import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
 
-/**
- * DETECTOR 1: Rapid Burst
- *
- * Triggers when:
- * - 100+ requests from same source (IP/User)
- * - WITHIN 30 seconds
- */
 export const rapidBurstDetector: IDetector = {
   async detect(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     const findings: AnalyzerFinding[] = [];
@@ -20,47 +13,40 @@ export const rapidBurstDetector: IDetector = {
 
     if (ctx.logs.length === 0) return findings;
 
-    // Check by IP
-    for (const [ipKey, logs] of ctx.entityTimelines) {
-      if (!ipKey.startsWith("ip_")) continue;
+    // Group the temporal batch by IP
+    const logsByIp = grouping.groupByIp(ctx.logs);
 
-      const count = slidingWindow.countInWindow(
-        logs,
-        config.temporal.burst.windowSeconds,
-      );
+    for (const [ip, logs] of logsByIp) {
+      if (ip === "unknown") continue;
 
+      const count = logs.length;
+
+      // Since the orchestrator provides a temporal window, we just check total volume
       if (count >= config.temporal.burst.threshold) {
-        const ip = ipKey.replace("ip_", "");
-
         findings.push(
           createFinding({
             jobId: ctx.jobId,
             analyzer: "temporal",
             finding_type: "RAPID_BURST",
             severity: FindingSeverity.HIGH,
-            confidence: 0.92,
+            confidence: 0.95,
             title: "Rapid Request Burst Detected",
-            summary: `${count} requests from ${ip} within ${config.temporal.burst.windowSeconds}s`,
-            log_references: logs.slice(0, 50).map((log) => log.id), // Limit refs
+            summary: `${count} requests from ${ip} within the analysis window`,
+            log_references: logs.slice(0, 50).map((log) => log.id), // Cap references to prevent payload bloat
             affected_entities: {
               source_ip: ip,
               request_count: count,
             },
             evidence: {
               requests_in_window: count,
-              window_seconds: config.temporal.burst.windowSeconds,
-              avg_interval_ms:
-                count > 1
-                  ? (config.temporal.burst.windowSeconds * 1000) / count
-                  : 0,
+              first_request: logs[0]?.timestamp,
+              last_request: logs[logs.length - 1]?.timestamp,
             },
             metadata: {
               rule_id: "temp_1_1",
-              rule_version: "1.0",
-              threshold: config.temporal.burst.threshold,
+              trigger_threshold: config.temporal.burst.threshold,
             },
-            recommendation:
-              "Investigate source IP for DDoS or automated attack. Consider rate limiting.",
+            recommendation: "Investigate source IP for DDoS, brute-force, or automated bot activity. Consider rate limiting at the WAF.",
           }),
         );
       }
@@ -69,4 +55,3 @@ export const rapidBurstDetector: IDetector = {
     return findings;
   },
 };
-

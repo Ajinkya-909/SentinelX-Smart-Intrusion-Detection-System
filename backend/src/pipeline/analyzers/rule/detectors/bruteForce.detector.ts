@@ -4,39 +4,31 @@ import { AnalysisContext } from "../../shared/context/AnalysisContext";
 import { FindingSeverity } from "../../shared/findings/FindingSeverity";
 import { createFinding } from "../../shared/findings/createFinding";
 import { grouping } from "../../shared/utils/grouping.util";
-import { slidingWindow } from "../../shared/utils/slidingWindow.util";
 import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
 
-/**
- * DETECTOR 1: Brute Force Authentication Attack
- *
- * Triggers when:
- * - 50+ failed authentication attempts
- * - FROM same IP OR same user
- * - WITHIN 5 minutes
- */
 export const bruteForceDetector: IDetector = {
   async detect(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     const findings: AnalyzerFinding[] = [];
     const config = loadAnalyzerConfig();
 
-    if (ctx.failedAuthEvents.length === 0) return findings;
+    // Filter only logs that explicitly indicate authentication failures
+    const failedAuthLogs = ctx.logs.filter(log => log.event_type === "LOGIN_FAILED");
+    if (failedAuthLogs.length === 0) return findings;
 
-    // Check by IP
-    const failedByIp = grouping.groupByIp(ctx.failedAuthEvents);
+    // Group the failures by IP address
+    const failedByIp = grouping.groupByIp(failedAuthLogs);
+    
     for (const [ip, logs] of failedByIp) {
-      const count = slidingWindow.countInWindow(
-        logs,
-        config.bruteForce.windowSeconds,
-      );
+      const count = logs.length;
 
+      // Because analyzer.service.ts already sliced the data into a strict time window,
+      // we don't need to re-calculate timestamps. We just check if the sheer volume
+      // in this window exceeds our threshold.
       if (count >= config.bruteForce.threshold) {
-        const confidence = Math.min(
-          0.99,
-          0.95 +
-            (count > 100 ? 0.02 : 0) +
-            (count > 200 ? 0.01 : 0) -
-            (config.bruteForce.windowSeconds < 120 ? 0.05 : 0),
+        
+        // Extract the unique usernames targeted (e.g., did they try 'admin', 'root', 'user1'?)
+        const usernamesTargeted = new Set(
+            logs.map(log => log.metadata?.actor?.username).filter(Boolean)
         );
 
         findings.push(
@@ -45,88 +37,26 @@ export const bruteForceDetector: IDetector = {
             analyzer: "rule",
             finding_type: "BRUTE_FORCE_AUTH",
             severity: FindingSeverity.HIGH,
-            confidence,
+            confidence: count > (config.bruteForce.threshold * 2) ? 0.99 : 0.90,
             title: "Brute Force Attack Detected",
-            summary: `Multiple failed authentication attempts detected from ${ip}`,
+            summary: `${count} failed authentication attempts detected from ${ip}`,
             log_references: logs.map((log) => log.id),
             affected_entities: {
               ip_address: ip,
               attempt_count: count,
-              unique_passwords_tried: new Set(
-                logs.map((log) => log.metadata?.password_attempted || ""),
-              ).size,
+              unique_users_targeted: usernamesTargeted.size,
             },
             evidence: {
               failed_attempts: count,
-              time_window_seconds: config.bruteForce.windowSeconds,
-              first_attempt: logs[0]?.timestamp || new Date().toISOString(),
-              last_attempt:
-                logs[logs.length - 1]?.timestamp || new Date().toISOString(),
-              event_type: "auth_failed",
+              first_attempt: logs[0]?.timestamp,
+              last_attempt: logs[logs.length - 1]?.timestamp,
+              targets: Array.from(usernamesTargeted).slice(0, 5) // Show top 5 targeted users
             },
             metadata: {
-              rule_id: "rule_1_1",
-              rule_version: "1.0",
+              rule_id: "rule_brute_force_1",
               trigger_threshold: config.bruteForce.threshold,
-              actual_count: count,
             },
-            recommendation:
-              "Block IP address immediately. Reset user password. Review account for compromise.",
-          }),
-        );
-      }
-    }
-
-    // Check by User
-    const failedByUser = grouping.groupByUser(ctx.failedAuthEvents);
-    for (const [userId, logs] of failedByUser) {
-      const count = slidingWindow.countInWindow(
-        logs,
-        config.bruteForce.windowSeconds,
-      );
-
-      if (count >= config.bruteForce.threshold) {
-        const confidence = Math.min(
-          0.99,
-          0.95 +
-            (count > 100 ? 0.02 : 0) +
-            (count > 200 ? 0.01 : 0) -
-            (config.bruteForce.windowSeconds < 120 ? 0.05 : 0),
-        );
-
-        findings.push(
-          createFinding({
-            jobId: ctx.jobId,
-            analyzer: "rule",
-            finding_type: "BRUTE_FORCE_AUTH",
-            severity: FindingSeverity.HIGH,
-            confidence,
-            title: "Brute Force Attack Detected",
-            summary: `Multiple failed authentication attempts detected for user ${userId}`,
-            log_references: logs.map((log) => log.id),
-            affected_entities: {
-              username: userId,
-              attempt_count: count,
-              unique_passwords_tried: new Set(
-                logs.map((log) => log.metadata?.password_attempted || ""),
-              ).size,
-            },
-            evidence: {
-              failed_attempts: count,
-              time_window_seconds: config.bruteForce.windowSeconds,
-              first_attempt: logs[0]?.timestamp || new Date().toISOString(),
-              last_attempt:
-                logs[logs.length - 1]?.timestamp || new Date().toISOString(),
-              event_type: "auth_failed",
-            },
-            metadata: {
-              rule_id: "rule_1_1",
-              rule_version: "1.0",
-              trigger_threshold: config.bruteForce.threshold,
-              actual_count: count,
-            },
-            recommendation:
-              "Reset user password immediately. Enable MFA. Review account activity for compromise.",
+            recommendation: "Block IP address immediately. Check if any attempts from this IP were successful.",
           }),
         );
       }
@@ -135,4 +65,3 @@ export const bruteForceDetector: IDetector = {
     return findings;
   },
 };
-

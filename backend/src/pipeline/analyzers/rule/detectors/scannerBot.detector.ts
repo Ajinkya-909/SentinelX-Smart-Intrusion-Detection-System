@@ -3,87 +3,49 @@ import { AnalyzerFinding } from "../../shared/findings/Finding.types";
 import { AnalysisContext } from "../../shared/context/AnalysisContext";
 import { FindingSeverity } from "../../shared/findings/FindingSeverity";
 import { createFinding } from "../../shared/findings/createFinding";
-import { grouping } from "../../shared/utils/grouping.util";
-import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
 
-/**
- * DETECTOR 9: Scanner/Bot Detection
- *
- * Triggers when request user_agent matches known scanners:
- * - sqlmap
- * - nikto
- * - nmap
- * - masscan
- * - shodan
- * - nessus
- * - qualys
- * - burp
- * - zaproxy
- */
 export const scannerBotDetector: IDetector = {
   async detect(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     const findings: AnalyzerFinding[] = [];
-    const config = loadAnalyzerConfig();
+    
+    // Hardcoded list of known malicious/intrusive automated scanners
+    const knownScannerAgents = [
+      "nmap", "sqlmap", "nikto", "dirbuster", "zgrab", "masscan", 
+      "w3af", "arachni", "netsparker", "nessus"
+    ];
 
-    if (ctx.logs.length === 0) return findings;
+    for (const log of ctx.logs) {
+      const userAgent = log.metadata?.client?.userAgent?.toLowerCase();
+      
+      if (!userAgent) continue;
 
-    // Group logs by IP
-    const byIp = grouping.groupByIp(ctx.logs);
-
-    for (const [ip, logs] of byIp) {
-      let scannerType = "";
-      let scannerLogs: typeof logs = [];
-
-      // Check for scanner patterns
-      for (const log of logs) {
-        const ua = (log.user_agent || "").toLowerCase();
-
-        for (const pattern of config.scannerBotPatterns) {
-          if (ua.includes(pattern.toLowerCase())) {
-            scannerType = pattern;
-            scannerLogs.push(log);
-            break;
-          }
+      for (const scanner of knownScannerAgents) {
+        if (userAgent.includes(scanner)) {
+          findings.push(
+              createFinding({
+                jobId: ctx.jobId,
+                analyzer: "rule",
+                finding_type: "SCANNER_BOT_DETECTED",
+                severity: FindingSeverity.MEDIUM,
+              confidence: 0.99, // 99% confident if they broadcast a known malicious user-agent
+              title: "Automated Security Scanner Detected",
+              summary: `IP ${log.ip_address} is using known security scanner: ${scanner}`,
+              log_references: [log.id],
+              affected_entities: {
+                ip_address: log.ip_address,
+              },
+              evidence: {
+                user_agent: userAgent,
+                scanner_family: scanner
+              },
+              metadata: { rule_id: "rule_bot_1" },
+              recommendation: "Add IP to WAF blocklist. Scanners are often precursors to targeted exploitation.",
+            })
+          );
+          break; // Report once per log
         }
       }
-
-      if (scannerLogs.length > 0 && scannerType) {
-        // Count unique endpoints scanned
-        const endpoints = grouping.getUniqueValues(scannerLogs, "endpoint");
-
-        findings.push(
-          createFinding({
-            jobId: ctx.jobId,
-            analyzer: "rule",
-            finding_type: "SCANNER_BOT_DETECTED",
-            severity: FindingSeverity.MEDIUM,
-            confidence: 0.85,
-            title: "Security Scanner Detected",
-            summary: "Requests from known security scanner detected",
-            log_references: scannerLogs.map((log) => log.id),
-            affected_entities: {
-              source_ip: ip,
-              user_agent: scannerLogs[0]?.user_agent || "unknown",
-              scanner_type: scannerType,
-            },
-            evidence: {
-              scanner_type: scannerType,
-              request_count: scannerLogs.length,
-              unique_endpoints_scanned: endpoints.size,
-              endpoints: Array.from(endpoints),
-            },
-            metadata: {
-              rule_id: "rule_5_1",
-              rule_version: "1.0",
-            },
-            recommendation:
-              "Block IP immediately. Review scanner activity logs for vulnerabilities discovered.",
-          }),
-        );
-      }
     }
-
     return findings;
   },
 };
-

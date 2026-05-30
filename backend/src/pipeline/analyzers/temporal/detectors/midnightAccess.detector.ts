@@ -5,23 +5,16 @@ import { FindingSeverity } from "../../shared/findings/FindingSeverity";
 import { createFinding } from "../../shared/findings/createFinding";
 import { timeline } from "../../shared/utils/timeline.util";
 
-/**
- * DETECTOR 4: Midnight Access
- *
- * Triggers when:
- * - Suspicious login attempts at unusual times (3AM)
- * - Indicates potential automated attacks or compromised credentials
- */
 export const midnightAccessDetector: IDetector = {
   async detect(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     const findings: AnalyzerFinding[] = [];
+    const unusualHours = [1, 2, 3, 4]; // 1 AM to 4 AM range
 
-    if (ctx.successfulAuthEvents.length === 0) return findings;
+    for (const log of ctx.logs) {
+      // Look explicitly for successful authentications
+      if (log.event_type !== "LOGIN_ATTEMPT" && log.event_type !== "SSH_LOGIN_ATTEMPT") continue;
+      if (log.metadata?.security?.authSuccess !== true) continue;
 
-    // Check for logins at 3AM (unusual time)
-    const unusualHours = [2, 3, 4]; // 2AM-4AM range
-
-    for (const log of ctx.successfulAuthEvents) {
       const hour = timeline.getHour(log);
 
       if (unusualHours.includes(hour)) {
@@ -31,12 +24,12 @@ export const midnightAccessDetector: IDetector = {
             analyzer: "temporal",
             finding_type: "MIDNIGHT_ACCESS",
             severity: FindingSeverity.LOW,
-            confidence: 0.65,
+            confidence: 0.70, // Lower confidence because night-shift workers exist
             title: "Midnight Access Detected",
-            summary: `Successful login for ${log.metadata?.user_id} at ${hour}:00 (unusual time)`,
+            summary: `Successful login for ${log.metadata?.actor?.username || "unknown user"} at ${hour}:00.`,
             log_references: [log.id],
             affected_entities: {
-              username: log.metadata?.user_id || "unknown",
+              username: log.metadata?.actor?.username || "unknown",
               ip_address: log.ip_address,
               hour,
             },
@@ -45,12 +38,8 @@ export const midnightAccessDetector: IDetector = {
               hour,
               is_unusual_hour: true,
             },
-            metadata: {
-              rule_id: "temp_2_2",
-              rule_version: "1.0",
-            },
-            recommendation:
-              "Verify login with user. Check for account compromise or legitimate work schedule.",
+            metadata: { rule_id: "temp_2_2" },
+            recommendation: "Review context. If this user does not normally log in at this hour, check for compromised credentials or impossible travel.",
           }),
         );
       }
@@ -59,4 +48,3 @@ export const midnightAccessDetector: IDetector = {
     return findings;
   },
 };
-

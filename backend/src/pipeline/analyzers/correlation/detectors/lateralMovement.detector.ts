@@ -3,45 +3,31 @@ import { AnalyzerFinding } from "../../shared/findings/Finding.types";
 import { AnalysisContext } from "../../shared/context/AnalysisContext";
 import { FindingSeverity } from "../../shared/findings/FindingSeverity";
 import { createFinding } from "../../shared/findings/createFinding";
-import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
+import { grouping } from "../../shared/utils/grouping.util";
 
-/**
- * DETECTOR 3: Lateral Movement
- *
- * Detects attack chain:
- * - Single attacker (by IP) compromises multiple user accounts
- * - Or single user (by ID) accesses from multiple IPs
- * - Within 1 hour
- */
 export const lateralMovementDetector: IDetector = {
   async detect(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     const findings: AnalyzerFinding[] = [];
-    const config = loadAnalyzerConfig();
 
-    if (ctx.logs.length < 2) return findings;
+    // Focus on successful authentication events
+    const authLogs = ctx.logs.filter(log => log.metadata?.security?.authSuccess === true);
+    
+    // Group by username (actor.username) since grouping util doesn't support arbitrary fields
+    const logsByUser = new Map<string, any[]>();
+    for (const log of authLogs) {
+      const uname = log.metadata?.actor?.username ?? "unknown";
+      if (!logsByUser.has(uname)) logsByUser.set(uname, []);
+      logsByUser.get(uname)!.push(log);
+    }
 
-    // Check if single IP is accessing many different users
-    for (const [ipKey, logs] of ctx.entityTimelines) {
-      if (!ipKey.startsWith("ip_")) continue;
+    for (const [username, logs] of logsByUser) {
+      if (!username || username === "unknown") continue;
 
-      const ip = ipKey.replace("ip_", "");
+      // Track distinct source IPs used by this single user
+      const distinctIps = new Set(logs.map((log: any) => log.ip_address).filter(Boolean));
 
-      // Get all users accessed from this IP within time window
-      const users = new Set<string>();
-      const recentLogs = logs.filter((log) => {
-        const now = new Date();
-        const logTime = new Date(log.timestamp);
-        const diffSeconds = (now.getTime() - logTime.getTime()) / 1000;
-        return diffSeconds <= config.correlation.lateralMovementWindow;
-      });
-
-      for (const log of recentLogs) {
-        const userId = log.metadata?.user_id;
-        if (userId) users.add(userId);
-      }
-
-      // If single IP accessing 3+ user accounts, it's lateral movement
-      if (users.size >= 3) {
+      // If one user is hopping between multiple IPs in this short temporal batch
+      if (distinctIps.size > 1) {
         findings.push(
           createFinding({
             jobId: ctx.jobId,
@@ -49,32 +35,20 @@ export const lateralMovementDetector: IDetector = {
             finding_type: "LATERAL_MOVEMENT",
             severity: FindingSeverity.HIGH,
             confidence: 0.88,
-            title: "Lateral Movement Detected",
-            summary: `IP ${ip} accessed ${users.size} different user accounts`,
-            log_references: recentLogs.slice(0, 30).map((log) => log.id),
-            affected_entities: {
-              attacker_ip: ip,
-              compromised_users: Array.from(users),
-              user_count: users.size,
-            },
+            title: "Potential Lateral Movement",
+            summary: `User '${username}' authenticated from multiple different IPs (${Array.from(distinctIps).join(', ')}) in a short timeframe.`,
+            log_references: logs.slice(0, 10).map((l: any) => l.id),
+            affected_entities: { username },
             evidence: {
-              unique_users_accessed: users.size,
-              total_requests: recentLogs.length,
-              time_window_seconds: config.correlation.lateralMovementWindow,
+              ips_involved: Array.from(distinctIps),
+              total_auth_events: logs.length
             },
-            metadata: {
-              rule_id: "corr_2_1",
-              rule_version: "1.0",
-              window_seconds: config.correlation.lateralMovementWindow,
-            },
-            recommendation:
-              "CRITICAL: Block attacker IP. Reset passwords for compromised users. Activate incident response.",
-          }),
+            metadata: { rule_id: "corr_3_1" },
+            recommendation: "Investigate if this user is performing lateral movement. Check if the user is using a VPN or if credentials were compromised and used from a new location.",
+          })
         );
       }
     }
-
     return findings;
-  },
+  }
 };
-

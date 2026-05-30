@@ -3,70 +3,64 @@ import { AnalyzerFinding } from "../../shared/findings/Finding.types";
 import { AnalysisContext } from "../../shared/context/AnalysisContext";
 import { FindingSeverity } from "../../shared/findings/FindingSeverity";
 import { createFinding } from "../../shared/findings/createFinding";
+import { grouping } from "../../shared/utils/grouping.util";
 import { statistics } from "../../shared/utils/statistics.util";
-import { timeline } from "../../shared/utils/timeline.util";
 import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
 
-/**
- * DETECTOR 1: Request Spike
- *
- * Triggers when:
- * - Request count exceeds baseline by 5x multiplier
- * - Within a time window
- */
 export const requestSpikeDetector: IDetector = {
   async detect(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     const findings: AnalyzerFinding[] = [];
     const config = loadAnalyzerConfig();
 
-    if (ctx.timeBuckets.size === 0) return findings;
+    if (ctx.logs.length < 50) return findings; // Need a decent sample size for statistics
 
-    // Get request counts per minute
-    const minuteCounts: number[] = [];
-    for (const bucket of ctx.timeBuckets.values()) {
-      minuteCounts.push(bucket.length);
+    // Group logs by IP address to compare actors against the crowd
+    const logsByIp = grouping.groupByIp(ctx.logs);
+    const ipCounts: number[] = [];
+    
+    for (const [ip, logs] of logsByIp) {
+      if (ip !== "unknown") ipCounts.push(logs.length);
     }
 
-    if (minuteCounts.length < 2) return findings;
+    if (ipCounts.length < 3) return findings; // Need a crowd to establish a baseline
 
-    const mean = statistics.mean(minuteCounts);
-    const stddev = statistics.stddev(minuteCounts);
-    const spikeThreshold = mean * config.statistical.spikeMultiplier;
+    const mean = statistics.mean(ipCounts);
+    const stddev = statistics.stddev(ipCounts);
+    
+    // Minimum threshold to prevent flagging slight variations in low-traffic windows
+    const minThreshold = Math.max(config.statistical.spikeMultiplier, mean + (stddev * 3));
 
-    // Find spikes
-    const bucketEntries = Array.from(ctx.timeBuckets.entries());
-    for (const [bucketKey, logs] of bucketEntries) {
-      if (logs.length >= spikeThreshold) {
-        const zScore = statistics.zScore(logs.length, mean, stddev);
+    for (const [ip, logs] of logsByIp) {
+      if (ip === "unknown") continue;
+
+      const count = logs.length;
+
+      // If an IP is operating > 3 standard deviations above the crowd average
+      if (count > minThreshold && count > 50) {
+        const zScore = statistics.zScore(count, mean, stddev);
 
         findings.push(
           createFinding({
             jobId: ctx.jobId,
             analyzer: "statistical",
             finding_type: "REQUEST_SPIKE",
-            severity: FindingSeverity.MEDIUM,
-            confidence: Math.min(0.95, 0.6 + Math.abs(zScore) * 0.1),
-            title: "Request Spike Detected",
-            summary: `Abnormal spike in request volume during ${bucketKey}`,
-            log_references: logs.map((log) => log.id),
+            severity: FindingSeverity.HIGH,
+            confidence: Math.min(0.95, 0.6 + (Math.abs(zScore) * 0.05)), // Higher Z-Score = Higher Confidence
+            title: "Anomalous Request Volume (Z-Score Spike)",
+            summary: `IP ${ip} generated ${count} requests, mathematically anomalous compared to the network average of ${Math.round(mean)}.`,
+            log_references: logs.slice(0, 50).map((log: any) => log.id),
             affected_entities: {
-              time_bucket: bucketKey,
-              request_count: logs.length,
+              ip_address: ip,
+              request_count: count,
             },
             evidence: {
-              baseline_mean: Math.round(mean),
-              baseline_stddev: Math.round(stddev),
-              spike_count: logs.length,
+              crowd_mean: Math.round(mean),
+              crowd_stddev: Math.round(stddev * 100) / 100,
+              spike_count: count,
               z_score: Math.round(zScore * 100) / 100,
-              multiplier: Math.round((logs.length / mean) * 100) / 100,
             },
-            metadata: {
-              rule_id: "stat_1_1",
-              rule_version: "1.0",
-              threshold_multiplier: config.statistical.spikeMultiplier,
-            },
-            recommendation:
-              "Investigate source IPs. Check for DDoS or scanning activity. Review application logs.",
+            metadata: { rule_id: "stat_1_1" },
+            recommendation: "Investigate IP for DoS, automated scraping, or misconfigured API integrations.",
           }),
         );
       }
@@ -75,4 +69,3 @@ export const requestSpikeDetector: IDetector = {
     return findings;
   },
 };
-

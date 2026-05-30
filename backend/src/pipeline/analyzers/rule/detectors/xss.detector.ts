@@ -5,71 +5,59 @@ import { FindingSeverity } from "../../shared/findings/FindingSeverity";
 import { createFinding } from "../../shared/findings/createFinding";
 import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
 
-/**
- * DETECTOR 7: XSS (Cross-Site Scripting) Attempt
- *
- * Triggers when request contains XSS patterns:
- * - <script>
- * - javascript:
- * - onerror=
- * - onload=
- * - eval(
- * - onclick=
- * - onmouseover=
- */
 export const xssDetector: IDetector = {
   async detect(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     const findings: AnalyzerFinding[] = [];
     const config = loadAnalyzerConfig();
 
-    if (ctx.logs.length === 0) return findings;
-
     for (const log of ctx.logs) {
-      // Check request parameters and message for XSS patterns
-      const checkString =
-        `${log.message} ${JSON.stringify(log.metadata || {})}`.toLowerCase();
+      // ONLY run this on logs that are actually HTTP Web Requests
+      if (!log.event_type.startsWith("HTTP_")) continue;
+
+      // Extract specific fields where XSS usually occurs
+      const targetFields = [
+        log.message,
+        log.metadata?.request?.url,
+        log.metadata?.action?.endpoint,
+        ...(log.metadata?.request?.query ? Object.values(log.metadata.request.query) : [])
+      ].filter(Boolean).map(String);
+
+      const checkString = targetFields.join(" ").toLowerCase();
 
       for (const pattern of config.maliciousPayload.xssPatterns) {
         if (checkString.includes(pattern.toLowerCase())) {
-          const storedInDb = log.status_code === 200 || log.status_code === 201;
+          
+          const statusCode = log.metadata?.request?.statusCode;
+          const isSuccessful = statusCode === 200 || statusCode === 201;
 
           findings.push(
             createFinding({
               jobId: ctx.jobId,
               analyzer: "rule",
               finding_type: "MALICIOUS_PAYLOAD_XSS",
-              severity: FindingSeverity.HIGH,
-              confidence: 0.9,
-              title: "XSS Attack Pattern Detected",
-              summary: "Request contains XSS payload",
+              severity: isSuccessful ? FindingSeverity.HIGH : FindingSeverity.MEDIUM,
+              confidence: 0.95,
+              title: "Cross-Site Scripting (XSS) Attempt",
+              summary: `XSS pattern detected from ${log.ip_address || 'unknown IP'}`,
               log_references: [log.id],
               affected_entities: {
                 source_ip: log.ip_address,
-                target_endpoint: log.endpoint,
-                parameter: "request_param",
+                target_endpoint: log.metadata?.action?.endpoint || "unknown",
               },
               evidence: {
                 pattern_matched: pattern,
-                payload_location: "request_body",
-                stored_in_db: storedInDb,
-                response_code: log.status_code,
+                payload: checkString.substring(0, 200),
+                response_code: statusCode,
+                injection_likely_successful: isSuccessful,
               },
-              metadata: {
-                rule_id: "rule_4_2",
-                rule_version: "1.0",
-              },
-              recommendation:
-                "Sanitize user input. Review database for malicious entries. Implement Content Security Policy.",
-            }),
+              metadata: { rule_id: "rule_xss_1" },
+              recommendation: "Ensure application sanitizes user input and implements strict Content Security Policy (CSP).",
+            })
           );
-
-          // Only report once per log
-          break;
+          break; // Report once per log
         }
       }
     }
-
     return findings;
   },
 };
-

@@ -58,13 +58,13 @@ export const correlation = {
   },
 
   /**
-   * Count how many different values exist for a field across logs
+   * Count how many different values exist for a dynamically mapped field
    */
-  countDistinctValues(logs: NormalizedLog[], field: string): number {
+  countDistinctValues(logs: NormalizedLog[], getter: (log: NormalizedLog) => any): number {
     const values = new Set<string>();
     for (const log of logs) {
-      const value = (log as any)[field];
-      if (value) {
+      const value = getter(log);
+      if (value !== undefined && value !== null) {
         values.add(String(value));
       }
     }
@@ -72,13 +72,13 @@ export const correlation = {
   },
 
   /**
-   * Get all distinct values for a field
+   * Get all distinct values using a dynamically mapped field
    */
-  getDistinctValues(logs: NormalizedLog[], field: string): Set<string> {
+  getDistinctValues(logs: NormalizedLog[], getter: (log: NormalizedLog) => any): Set<string> {
     const values = new Set<string>();
     for (const log of logs) {
-      const value = (log as any)[field];
-      if (value) {
+      const value = getter(log);
+      if (value !== undefined && value !== null) {
         values.add(String(value));
       }
     }
@@ -86,7 +86,7 @@ export const correlation = {
   },
 
   /**
-   * Find common attributes across multiple logs
+   * Find common attributes across multiple logs natively mapped to the deep schema
    */
   findCommonAttributes(logs: NormalizedLog[]): {
     commonIps: Set<string>;
@@ -99,21 +99,21 @@ export const correlation = {
 
     for (const log of logs) {
       if (log.ip_address) commonIps.add(log.ip_address);
-      if (log.metadata?.user_id) commonUsers.add(log.metadata.user_id);
-      if (log.endpoint) commonEndpoints.add(log.endpoint);
+      if (log.metadata?.actor?.username) commonUsers.add(log.metadata.actor.username);
+      if (log.metadata?.action?.endpoint) commonEndpoints.add(log.metadata.action.endpoint);
     }
 
     return { commonIps, commonUsers, commonEndpoints };
   },
 
   /**
-   * Build attack chain graph (sequence of related events)
+   * Build attack chain graph (sequence of related events mapping to user or IP)
    */
   buildEventChain(logs: NormalizedLog[], entityId: string): NormalizedLog[] {
     return this.getSequence(
       logs.filter(
         (log) =>
-          log.metadata?.user_id === entityId || log.ip_address === entityId,
+          log.metadata?.actor?.username === entityId || log.ip_address === entityId,
       ),
     );
   },

@@ -4,91 +4,48 @@ import { AnalysisContext } from "../../shared/context/AnalysisContext";
 import { FindingSeverity } from "../../shared/findings/FindingSeverity";
 import { createFinding } from "../../shared/findings/createFinding";
 import { timeline } from "../../shared/utils/timeline.util";
-import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
 
-/**
- * DETECTOR 4: Privilege Escalation Chain
- *
- * Detects attack chain:
- * - Failed privilege escalation attempts
- * - Followed by successful admin/high-priv operation
- * - Within 2 minutes (rapid escalation)
- */
 export const privilegeEscalationChainDetector: IDetector = {
   async detect(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     const findings: AnalyzerFinding[] = [];
-    const config = loadAnalyzerConfig();
 
-    if (ctx.logs.length < 2) return findings;
+    // Split logs into attempts and successes
+    const attempts = ctx.logs.filter(l => l.event_type === "PERMISSION_DENIED" || (l.metadata?.request?.statusCode === 403));
+    const successes = ctx.logs.filter(l => l.event_type === "PRIVILEGE_ESCALATION_SUCCESS" || l.metadata?.parserMetadata?.EventID === 4672);
 
-    // Find failed priv-esc attempts (403 on admin endpoint)
-    const failedPrivEscLogs = ctx.logs.filter(
-      (log) =>
-        (log.endpoint?.includes("/admin") ||
-          log.endpoint?.includes("/api/admin")) &&
-        (log.status_code === 403 || log.status_code === 401),
-    );
+    for (const success of successes) {
+      // Look for a previous "Denied" attempt from the same IP/User within the same window
+      const priorAttempt = attempts.find(a => 
+        (a.ip_address === success.ip_address || a.metadata?.actor?.username === success.metadata?.actor?.username) &&
+        new Date(a.timestamp).getTime() < new Date(success.timestamp).getTime()
+      );
 
-    if (failedPrivEscLogs.length === 0) return findings;
-
-    // Find successful admin operations
-    const successfulAdminLogs = ctx.adminAccessEvents.filter(
-      (log) => log.status_code < 400,
-    );
-
-    if (successfulAdminLogs.length === 0) return findings;
-
-    // Check for rapid chains
-    for (const failed of failedPrivEscLogs) {
-      for (const success of successfulAdminLogs) {
-        const userId = failed.metadata?.user_id;
-
-        // Same user: failed priv-esc then successful admin
-        if (userId === success.metadata?.user_id) {
-          const timeDiff =
-            new Date(success.timestamp).getTime() -
-            new Date(failed.timestamp).getTime();
-          const timeDiffSeconds = timeDiff / 1000;
-
-          if (
-            timeDiffSeconds > 0 &&
-            timeDiffSeconds <= config.correlation.escalationWindow
-          ) {
-            findings.push(
-              createFinding({
-                jobId: ctx.jobId,
-                analyzer: "correlation",
-                finding_type: "PRIVILEGE_ESCALATION_CHAIN",
-                severity: FindingSeverity.CRITICAL,
-                confidence: 0.96,
-                title: "Privilege Escalation Chain Detected",
-                summary: `User ${userId} escalated privileges after failed attempt`,
-                log_references: [failed.id, success.id],
-                affected_entities: {
-                  username: userId,
-                  failed_priv_esc_endpoint: failed.endpoint,
-                  successful_admin_endpoint: success.endpoint,
-                },
-                evidence: {
-                  failed_attempts: 1,
-                  successful_escalation: true,
-                  time_between_attempts_seconds: timeDiffSeconds,
-                },
-                metadata: {
-                  rule_id: "corr_2_2",
-                  rule_version: "1.0",
-                  window_seconds: config.correlation.escalationWindow,
-                },
-                recommendation:
-                  "CRITICAL: Immediate privilege revocation. Investigate for exploit/vulnerability. Audit admin actions.",
-              }),
-            );
-          }
-        }
+      if (priorAttempt) {
+        findings.push(
+          createFinding({
+            jobId: ctx.jobId,
+            analyzer: "correlation",
+            finding_type: "PRIVILEGE_ESCALATION_CHAIN",
+            severity: FindingSeverity.CRITICAL,
+            confidence: 0.95,
+            title: "Privilege Escalation Chain",
+            summary: `Successful privilege escalation followed a denied attempt by the same entity.`,
+            log_references: [priorAttempt.id, success.id],
+            affected_entities: {
+              source_ip: success.ip_address,
+              username: success.metadata?.actor?.username
+            },
+            evidence: {
+              denied_event_id: priorAttempt.id,
+              success_event_id: success.id,
+              time_delta_seconds: (new Date(success.timestamp).getTime() - new Date(priorAttempt.timestamp).getTime()) / 1000
+            },
+            metadata: { rule_id: "corr_4_1" },
+            recommendation: "CRITICAL: The attacker attempted to gain unauthorized access, was denied, and then succeeded. The server is compromised. Isolate the system immediately.",
+          })
+        );
       }
     }
-
     return findings;
-  },
+  }
 };
-

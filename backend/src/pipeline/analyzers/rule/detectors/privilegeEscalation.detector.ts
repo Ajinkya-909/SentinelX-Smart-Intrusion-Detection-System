@@ -3,90 +3,64 @@ import { AnalyzerFinding } from "../../shared/findings/Finding.types";
 import { AnalysisContext } from "../../shared/context/AnalysisContext";
 import { FindingSeverity } from "../../shared/findings/FindingSeverity";
 import { createFinding } from "../../shared/findings/createFinding";
-import { slidingWindow } from "../../shared/utils/slidingWindow.util";
-import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
 
-/**
- * DETECTOR 5: Privilege Escalation Attempt
- *
- * Triggers when:
- * - User with role ≠ 'admin'
- * - Request to endpoint matching /admin/* OR /api/admin/*
- * - Response code: 401 OR 403
- * - 3+ such attempts
- * - WITHIN 10 minutes
- */
 export const privilegeEscalationDetector: IDetector = {
   async detect(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     const findings: AnalyzerFinding[] = [];
-    const config = loadAnalyzerConfig();
 
-    if (ctx.logs.length === 0) return findings;
+    for (const log of ctx.logs) {
+      let isEscalationAttempt = false;
+      let context = "";
 
-    // Find all non-admin users trying to access admin endpoints
-    const adminAccessAttempts = ctx.logs.filter((log) => {
-      const isAdmin = log.metadata?.role === "admin";
-      const isAdminEndpoint =
-        log.endpoint?.includes("/admin") ||
-        log.endpoint?.includes("/api/admin");
-      const isAccessDenied = log.status_code === 401 || log.status_code === 403;
-
-      return !isAdmin && isAdminEndpoint && isAccessDenied;
-    });
-
-    if (adminAccessAttempts.length === 0) return findings;
-
-    // Group by user
-    const byUser = new Map<string, typeof adminAccessAttempts>();
-    for (const log of adminAccessAttempts) {
-      const userId = log.metadata?.user_id || "unknown";
-      if (!byUser.has(userId)) {
-        byUser.set(userId, []);
+      // 1. Web-based Escalation (Accessing restricted endpoints)
+      const endpoint = log.metadata?.action?.endpoint?.toLowerCase();
+      if (endpoint && (endpoint.includes("/admin") || endpoint.includes("/system/config") || endpoint.includes("/root"))) {
+        // If they hit an admin endpoint and got a 403 Forbidden, they were caught. 
+        // If they got a 200 OK, they succeeded.
+        isEscalationAttempt = true;
+        context = `Web request to restricted path: ${endpoint}`;
       }
-      byUser.get(userId)!.push(log);
-    }
 
-    // Check each user
-    for (const [userId, logs] of byUser) {
-      const count = slidingWindow.countInWindow(
-        logs,
-        config.privileEscalation.windowMinutes * 60,
-      );
+      // 2. System-based Escalation (Linux sudo / Windows Event 4672)
+      const message = log.message?.toLowerCase();
+      if (log.log_type === "SYSLOG" && message && message.includes("sudo") && message.includes("incorrect password")) {
+        isEscalationAttempt = true;
+        context = "Failed sudo command attempt in syslog";
+      }
+      
+      // Windows specific: Event ID 4672 (Special privileges assigned to new logon)
+      if (log.log_type === "WINDOWS_EVENT" && log.metadata?.parserMetadata?.EventID === 4672) {
+        isEscalationAttempt = true;
+        context = "Windows Special Privileges Assigned (Event 4672)";
+      }
 
-      if (count >= config.privileEscalation.adminAccessAttempts) {
-        const endpoints = new Set(logs.map((log) => log.endpoint));
+      if (isEscalationAttempt) {
+        const isSuccessful = log.metadata?.request?.statusCode === 200 || log.metadata?.parserMetadata?.EventID === 4672;
 
         findings.push(
           createFinding({
             jobId: ctx.jobId,
             analyzer: "rule",
             finding_type: "PRIVILEGE_ESCALATION_ATTEMPT",
-            severity: FindingSeverity.MEDIUM,
-            confidence: 0.88,
-            title: "Privilege Escalation Attempt",
-            summary:
-              "Non-admin user repeatedly attempted to access admin endpoints",
-            log_references: logs.map((log) => log.id),
+            severity: isSuccessful ? FindingSeverity.CRITICAL : FindingSeverity.MEDIUM,
+            confidence: 0.90,
+            title: isSuccessful ? "Successful Privilege Escalation" : "Privilege Escalation Attempt",
+            summary: `Suspicious admin-level activity detected from ${log.metadata?.actor?.username || log.ip_address}`,
+            log_references: [log.id],
             affected_entities: {
-              username: userId,
-              user_role: "user",
-              target_endpoints: Array.from(endpoints),
+              ip_address: log.ip_address,
+              username: log.metadata?.actor?.username,
             },
             evidence: {
-              failed_attempts: count,
-              endpoints_targeted: endpoints.size,
-              response_codes: [401, 403],
-              time_window_minutes: config.privileEscalation.windowMinutes,
+              escalation_context: context,
+              was_successful: isSuccessful,
+              raw_message: log.message ? String(log.message).substring(0, 100) : undefined
             },
-            metadata: {
-              rule_id: "rule_3_1",
-              rule_version: "1.0",
-              trigger_threshold: config.privileEscalation.adminAccessAttempts,
-              actual_count: count,
-            },
-            recommendation:
-              "Log security event. Monitor user for further suspicious activity. Consider temporary account lockout.",
-          }),
+            metadata: { rule_id: "rule_priv_1" },
+            recommendation: isSuccessful 
+              ? "CRITICAL: Unauthorized admin access granted. Lock down account and initiate incident response."
+              : "Review user permissions and ensure admin endpoints are strictly access-controlled.",
+          })
         );
       }
     }
@@ -94,4 +68,3 @@ export const privilegeEscalationDetector: IDetector = {
     return findings;
   },
 };
-

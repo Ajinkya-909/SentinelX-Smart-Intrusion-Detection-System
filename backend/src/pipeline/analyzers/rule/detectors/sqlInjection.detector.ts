@@ -5,19 +5,6 @@ import { FindingSeverity } from "../../shared/findings/FindingSeverity";
 import { createFinding } from "../../shared/findings/createFinding";
 import { loadAnalyzerConfig } from "../../shared/config/analyzer.config";
 
-/**
- * DETECTOR 6: SQL Injection Attempt
- *
- * Triggers when request contains SQL injection patterns:
- * - OR '1'='1
- * - UNION SELECT
- * - DROP TABLE
- * - INSERT INTO
- * - DELETE FROM
- * - EXEC(
- * - ;--
- * - '/*
- */
 export const sqlInjectionDetector: IDetector = {
   async detect(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     const findings: AnalyzerFinding[] = [];
@@ -26,48 +13,54 @@ export const sqlInjectionDetector: IDetector = {
     if (ctx.logs.length === 0) return findings;
 
     for (const log of ctx.logs) {
-      // Check request parameters and message for SQL patterns
-      const checkString =
-        `${log.message} ${JSON.stringify(log.metadata || {})}`.toLowerCase();
+      // ONLY run this on logs that are actually HTTP Web Requests
+      if (!log.event_type.startsWith("HTTP_")) continue;
+
+      // Extract specific fields where SQLi actually occurs
+      const targetFields = [
+        log.message,
+        log.metadata?.request?.url,
+        log.metadata?.action?.endpoint,
+        ...(log.metadata?.request?.query ? Object.values(log.metadata.request.query) : [])
+      ].filter(Boolean).map(String); // Filter out undefined and ensure they are strings
+
+      // Join only the valid web fields for inspection
+      const checkString = targetFields.join(" ").toLowerCase();
 
       for (const pattern of config.maliciousPayload.sqlInjectionPatterns) {
         if (checkString.includes(pattern.toLowerCase())) {
-          const isSuccessful = log.status_code === 200;
+          
+          // Use the explicit Normalizer schema for status code
+          const statusCode = log.metadata?.request?.statusCode;
+          const isSuccessful = statusCode === 200 || statusCode === 201;
 
           findings.push(
             createFinding({
               jobId: ctx.jobId,
               analyzer: "rule",
               finding_type: "MALICIOUS_PAYLOAD_SQL_INJECTION",
-              severity: isSuccessful
-                ? FindingSeverity.CRITICAL
-                : FindingSeverity.HIGH,
-              confidence: isSuccessful ? 0.98 : 0.95,
+              severity: isSuccessful ? FindingSeverity.CRITICAL : FindingSeverity.HIGH,
+              confidence: isSuccessful ? 0.98 : 0.90, // Slightly lower confidence if it was blocked/failed
               title: "SQL Injection Attempt Detected",
-              summary: "Request contains SQL injection pattern",
+              summary: `SQL injection pattern '${pattern}' detected from ${log.ip_address || 'unknown IP'}`,
               log_references: [log.id],
               affected_entities: {
                 source_ip: log.ip_address,
-                target_endpoint: log.endpoint,
-                parameter: "request_param",
+                target_endpoint: log.metadata?.action?.endpoint || "unknown",
               },
               evidence: {
                 pattern_matched: pattern,
-                payload: checkString.substring(0, 100),
-                response_code: log.status_code,
+                payload: checkString.substring(0, 200), // Safe substring
+                response_code: statusCode,
                 injection_likely_successful: isSuccessful,
               },
               metadata: {
-                rule_id: "rule_4_1",
-                rule_version: "1.0",
+                rule_id: "rule_sqli_1",
               },
-              recommendation:
-                "CRITICAL: Block IP immediately. Rotate database credentials. Review database logs for data access.",
-            }),
+              recommendation: "CRITICAL: Block IP immediately. Review database logs for unauthorized data access.",
+            })
           );
-
-          // Only report once per log
-          break;
+          break; // Only report the first SQLi match per log line
         }
       }
     }
@@ -75,4 +68,3 @@ export const sqlInjectionDetector: IDetector = {
     return findings;
   },
 };
-
