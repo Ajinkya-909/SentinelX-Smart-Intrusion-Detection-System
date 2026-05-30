@@ -2,7 +2,7 @@
 export interface NormalizedLogMetadata {
   action?: { type?: string; endpoint?: string; method?: string; success?: boolean; error?: string };
   actor?: { username?: string; sessionId?: string };
-  request?: { statusCode?: number; url?: string; headers?: any };
+  request?: { statusCode?: number; url?: string; headers?: any; query?: Record<string, any> };
   security?: { authenticated?: boolean; authSuccess?: boolean; failureReason?: string };
   client?: { ipAddress?: string; userAgent?: string };
   parserMetadata?: { bytes?: number; wrapper?: string; original_json?: any; [key: string]: any };

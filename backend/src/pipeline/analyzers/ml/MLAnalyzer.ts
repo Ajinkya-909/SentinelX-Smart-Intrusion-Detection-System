@@ -13,9 +13,9 @@ export function extractUsername(log: any): string | null {
  * This provides the exported symbols expected by the public index
  */
 export class MLAnalyzer {
-  async analyze(ctx: AnalysisContext): Promise<void> {
+  async analyze(ctx: AnalysisContext): Promise<any[]> {
     // No-op placeholder: feature extraction and client calls live elsewhere.
-    return;
+    return [];
   }
 }
 
