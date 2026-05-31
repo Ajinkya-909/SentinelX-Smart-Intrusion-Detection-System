@@ -6,17 +6,23 @@ export class JsonDetector extends BaseDetector {
 
   protected readonly patterns: MicroPattern[] = [
     {
-      name: "isJsonObjectOrArray",
-      // Line starts and ends with {} or []
-      regex: /^\s*(?:\{.*\}|\[.*\])\s*$/,
-      weight: 2,
+      name: "hasStrictJsonEnvelope",
+      // Strictly ensures line starts with { and contains a valid "key": format immediately
+      regex: /^\s*\{\s*"[^"]+"\s*:/,
+      weight: 3,
       isCritical: true
     },
     {
+      name: "hasDenseJsonKeys",
+      // Looks for at least 3 JSON keys to ensure it's a complex log object, not just {"status": "ok"}
+      regex: /(?:"[^"]+"\s*:\s*){3,}/,
+      weight: 2
+    },
+    {
       name: "hasCommonLogKeys",
-      // Looks for standard generic logging keys
-      regex: /"(?:timestamp|time|level|severity|message|msg|error)"\s*:/i,
-      weight: 1
+      // Matches standard generic logging keys inside double quotes
+      regex: /"(?:timestamp|time|level|severity|message|msg|error|source|host)"\s*:/i,
+      weight: 2
     }
   ];
 }

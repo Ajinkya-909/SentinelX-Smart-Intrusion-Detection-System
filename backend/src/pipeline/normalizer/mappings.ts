@@ -240,6 +240,12 @@ export function classifyEventType(fields: Record<string, any>, rawMessage: strin
   if (explicitType) return normalizeEventType(explicitType);
 
   const rawLower = rawMessage.toLowerCase();
+  if (rawLower.includes("authentication failure")) return "AUTH_FAILURE";
+  if (rawLower.includes("invalid user") || rawLower.includes("user unknown")) return "AUTH_FAILURE";
+  if (rawLower.includes("accepted password") || rawLower.includes("accepted publickey")) return "AUTH_SUCCESS";
+  if (rawLower.includes("session opened")) return "SESSION_START";
+  if (rawLower.includes("session closed")) return "SESSION_END";
+  if (rawLower.includes("connection from")) return "CONNECTION_ATTEMPT";
   if (rawLower.includes("brute_force") || rawLower.includes("brute force")) return "BRUTE_FORCE_ATTEMPT";
   if (rawLower.includes("suspicious") && rawLower.includes("activity")) return "SUSPICIOUS_ACTIVITY";
   if (rawLower.includes("permission") && rawLower.includes("denied")) return "PERMISSION_DENIED";

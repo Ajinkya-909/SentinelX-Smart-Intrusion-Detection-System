@@ -2,28 +2,21 @@ import { BaseDetector, MicroPattern } from "./base.detector";
 
 export class WindowsEventDetector extends BaseDetector {
   protected readonly logType = "WINDOWS_EVENT";
-  // We can let the adaptive loop fallback to JSON or KeyValue parsers based on the file wrapper,
-  // but identifying it as WINDOWS_EVENT helps the normalizer map fields correctly.
   protected readonly parserName = "jsonParserV1"; 
 
   protected readonly patterns: MicroPattern[] = [
     {
-      name: "hasEventId",
-      // Looks for EventID: 4624 or "EventID": 4624
-      regex: /"EventID"\s*:\s*\d+|\bEventID\b\s*=?\s*\d+/i,
-      weight: 3,
-      isCritical: true // Without an EventID, it's virtually useless as a Windows log
+      name: "hasWindowsEventEnvelope",
+      // Looks for strict Windows Event JSON structures (Provider: Microsoft-Windows-...)
+      regex: /"Event"\s*:\s*\{\s*"System"\s*:\s*\{.*"Provider"\s*:\s*\{.*"Name"\s*:\s*"Microsoft-Windows/i,
+      weight: 5,
+      isCritical: true
     },
     {
-      name: "hasWindowsKeywords",
-      regex: /\b(?:SubjectUserName|TargetUserName|LogonType|ComputerName|TimeCreated|EventRecordID)\b/,
-      weight: 2
-    },
-    {
-      name: "hasWindowsProvider",
-      // Microsoft-Windows-Security-Auditing
-      regex: /Microsoft-Windows-[a-zA-Z0-9-]+/i,
-      weight: 2
+      name: "hasFlatWindowsEnvelope",
+      // Fallback for flat JSON exports of Windows Events, requires EventID AND Channel
+      regex: /"EventID"\s*:\s*\d+.*"Channel"\s*:\s*"(?:Security|System|Application|Setup)"/i,
+      weight: 4
     }
   ];
 }

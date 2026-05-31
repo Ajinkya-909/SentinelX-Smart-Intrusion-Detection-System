@@ -15,16 +15,28 @@ import {
   genericDetector
 } from "./detectors";
 
-// Array of all available heuristic detectors for easy iteration
-const ALL_DETECTORS = [
-  nginxDetector,
-  apacheDetector,
-  syslogDetector,
-  windowsEventDetector,
-  firewallDetector,
+// ============================================================================
+// PHASE 1: TIERED DETECTOR HIERARCHY
+// ============================================================================
+
+// Tier 1: High-Fidelity Envelopes. If these match, they are almost certainly correct.
+const TIER_1_HIGH_FIDELITY = [
   cloudTrailDetector,
   suricataDetector,
   dockerDetector,
+  windowsEventDetector
+];
+
+// Tier 2: Standard Infrastructure. Strict text formats with predictable regex.
+const TIER_2_INFRASTRUCTURE = [
+  syslogDetector,
+  nginxDetector,
+  apacheDetector,
+  firewallDetector
+];
+
+// Tier 3: Greedy Structural Fallbacks. These should ONLY win if Tiers 1 & 2 fail.
+const TIER_3_FALLBACKS = [
   jsonDetector,
   keyValueDetector,
   genericDetector
@@ -32,12 +44,13 @@ const ALL_DETECTORS = [
 
 export class TypeDetectorService {
   /**
-   * Analyzes raw lines to detect log format using heuristic scoring and dynamic sampling.
+   * Analyzes raw lines to detect log format using Tiered Heuristic Scoring,
+   * Fallback Penalties, and Dynamic Sampling.
    * @param rawLines - Array of preprocessed log lines
    * @param options - Config options (e.g., exclude certain parsers during adaptive retries)
    */
   async detect(rawLines: string[], options?: { exclude?: string[] }): Promise<DetectionResult> {
-    logger.info(`[TYPE_DETECTOR] Starting adaptive type detection on ${rawLines.length} lines`);
+    logger.info(`[TYPE_DETECTOR] Starting adaptive tiered type detection on ${rawLines.length} lines`);
 
     const excludedTypes = options?.exclude || [];
     if (excludedTypes.length > 0) {
@@ -55,21 +68,46 @@ export class TypeDetectorService {
 
       logger.info(`[TYPE_DETECTOR] Sampling ${sampleSize} lines...`);
 
+      // 1. Analyze and group results by tier, immediately filtering out excluded types
+      // By calling analyze() first, we access the valid public `type` property on the result object.
+      const tier1Results = TIER_1_HIGH_FIDELITY
+        .map(d => d.analyze(sampleLines))
+        .filter(r => !excludedTypes.includes(r.type));
+
+      const tier2Results = TIER_2_INFRASTRUCTURE
+        .map(d => d.analyze(sampleLines))
+        .filter(r => !excludedTypes.includes(r.type));
+
+      const tier3Results = TIER_3_FALLBACKS
+        .map(d => d.analyze(sampleLines))
+        .filter(r => !excludedTypes.includes(r.type));
+
+      // ============================================================================
+      // PHASE 2: THE PENALTY ENGINE
+      // ============================================================================
+      // Check if any strict format shows a meaningful "pulse" (> 20%)
+      const hasStrongSignal = 
+        tier1Results.some(r => r.confidence > 0.20) ||
+        tier2Results.some(r => r.confidence > 0.20);
+
+      if (hasStrongSignal) {
+        for (const fallbackResult of tier3Results) {
+          // Apply a 60% penalty to the fallback score to prevent hijacking
+          fallbackResult.confidence *= 0.4;
+        }
+        logger.debug(`[TYPE_DETECTOR] Strong strict signal detected. Applied 60% penalty to Tier 3 fallbacks.`);
+      }
+
+      // Combine all valid results after penalties have been applied
+      const allResults = [...tier1Results, ...tier2Results, ...tier3Results];
+
       let currentBest: any = null;
       let highestConfidence = -1;
       const currentAnalysis: Record<string, number> = {};
 
-      // Run all detectors in the suite
-      for (const detector of ALL_DETECTORS) {
-        const result = detector.analyze(sampleLines);
+      // 2. Determine the actual winner 
+      for (const result of allResults) {
         currentAnalysis[result.type] = result.confidence;
-
-        // Skip excluded types (used by the adaptive parser loop to force fallbacks)
-        if (excludedTypes.includes(result.type)) {
-          continue;
-        }
-
-        // Track the highest confidence winner
         if (result.confidence > highestConfidence) {
           highestConfidence = result.confidence;
           currentBest = result;
@@ -81,8 +119,10 @@ export class TypeDetectorService {
 
       logger.debug(`[TYPE_DETECTOR] Best match at ${sampleSize} lines: ${bestRawResult?.type} (${((bestRawResult?.confidence || 0) * 100).toFixed(2)}%)`);
 
-      // If we have a strong confidence (>= 50%), OR we've exhausted the available lines, stop expanding.
-      if ((bestRawResult && bestRawResult.confidence >= 0.50) || sampleSize >= rawLines.length) {
+      // ============================================================================
+      // PHASE 3: RAISED EXIT THRESHOLD (50% -> 85%)
+      // ============================================================================
+      if ((bestRawResult && bestRawResult.confidence >= 0.85) || sampleSize >= rawLines.length) {
         logger.info(`[TYPE_DETECTOR] Confidence threshold met or max lines reached. Stopping expansion.`);
         break;
       } else {

@@ -6,22 +6,23 @@ export class KeyValueDetector extends BaseDetector {
 
   protected readonly patterns: MicroPattern[] = [
     {
-      name: "hasEqualsDelimiter",
-      // Looks for key=value patterns (e.g., src=192.168.1.1 or user='admin')
-      regex: /\b[a-zA-Z0-9_-]+\s*=\s*['"]?[a-zA-Z0-9_.-]+['"]?/i,
-      weight: 1
+      name: "hasStrictEqualsPairs",
+      // Strictly matches format WITHOUT spaces around equals: key=value
+      // Requires at least two pairs to avoid accidental matches in normal text
+      regex: /(?:[a-zA-Z0-9_.-]+=[^\s,]+(?:[\s,]|$)){2,}/,
+      weight: 3
     },
     {
-      name: "hasColonDelimiter",
-      // Looks for key: value patterns (non-JSON)
-      regex: /\b[a-zA-Z0-9_-]+\s*:\s*[a-zA-Z0-9_.-]+/i,
-      weight: 1
+      name: "hasDensePairs",
+      // Ensures the line is densely populated with pairs (at least 3 valid key=value or key:value sequences)
+      regex: /(?:(?:[a-zA-Z0-9_.-]+[=:][^\s,]+)[\s,]*){3,}/,
+      weight: 3
     },
     {
-      name: "hasMultiplePairs",
-      // Checks if there are at least two key-value pairs in the same line
-      regex: /(?:\b[a-zA-Z0-9_-]+\s*[=:]\s*[^=\s]+.*){2,}/i,
-      weight: 2
+      name: "hasCefOrLefHeader",
+      // Specifically matches Common Event Format (CEF) or Log Event Format (LEF) which are essentially strict KV
+      regex: /^(?:CEF|LEF):\d+/,
+      weight: 4
     }
   ];
 }

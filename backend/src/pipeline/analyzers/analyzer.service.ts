@@ -21,11 +21,6 @@ import { AnalyzerOrchestrator } from "./orchestrator/AnalyzerOrchestrator";
 
 export const analyzerService = {
   /**
-   * Analyze normalized logs for a job
-   * @param jobId - UUID of the job
-   * @returns Array of analyzer findings
-   */
-  /**
    * Phase 3: Analyze normalized logs using a Sliding Window approach
    * @param jobId - UUID of the job
    * @returns Array of analyzer findings
@@ -91,7 +86,8 @@ export const analyzerService = {
       logger.info(
         `[ANALYZER SERVICE] Validating ${masterFindings.length} raw findings...`,
       );
-      const validatedFindings = this.validateFindings(masterFindings);
+      // FIX 1: Pass the authoritative jobId from the orchestrator down to the validator
+      const validatedFindings = this.validateFindings(masterFindings, jobId);
 
       if (validatedFindings.invalid.length > 0) {
         logger.warn(
@@ -102,7 +98,7 @@ export const analyzerService = {
       // ===== STEP 3: CONVERT TO DB FORMAT =====
       logger.info(`[ANALYZER SERVICE] Converting findings to DB format...`);
       let findingsForDb = validatedFindings.valid.map((finding) =>
-        this.convertFindingToDbFormat(finding),
+        this.convertFindingToDbFormat(finding, jobId),
       );
 
       // ===== STEP 4: DEDUPLICATION (OVERLAPPING WINDOW FIX) =====
@@ -153,9 +149,10 @@ export const analyzerService = {
   /**
    * Validate findings - remove invalid ones
    * @param findings - Array of findings from orchestrator
+   * @param correctJobId - The definitive jobId provided by the orchestrator
    * @returns Object with valid and invalid findings
    */
-  validateFindings(findings: any[]): {
+  validateFindings(findings: any[], correctJobId: string): {
     valid: any[];
     invalid: { finding: any; reason: string }[];
   } {
@@ -165,9 +162,14 @@ export const analyzerService = {
     const validSeverities = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"];
 
     for (const finding of findings) {
+      // FIX 1 (Applied): Force the authoritative jobId onto the finding
+      // to prevent "undefined" string bugs when an analyzer forgets to set it.
+      finding.job_id = correctJobId;
+      finding.jobId = correctJobId;
+
       // Check required fields
       if (
-        !finding.jobId ||
+        !finding.job_id ||
         !finding.analyzer ||
         !finding.finding_type ||
         !finding.severity
@@ -209,27 +211,30 @@ export const analyzerService = {
   /**
    * Convert finding to database format with fingerprint
    * @param finding - Analyzer finding from orchestrator
+   * @param correctJobId - The definitive jobId provided by the orchestrator
    * @returns AnalyzerFindingInput ready for database
    */
-  convertFindingToDbFormat(finding: any) {
-    // Generate fingerprint for deduplication
-    const fingerprintString = `${finding.analyzer}_${
-      finding.finding_type
-    }_${JSON.stringify(finding.affected_entities || {}).substring(0, 50)}`;
-    const fingerprint = this.hashFingerprint(fingerprintString);
-
+  convertFindingToDbFormat(finding: any, correctJobId: string) {
     // Filter out undefined values from log_references (normalized logs don't have id field until persisted)
     const logReferences = (finding.log_references || []).filter(
       (ref: any) => ref !== undefined && ref !== null,
     );
 
+    // FIX 2: Generate fingerprint for deduplication that includes log references.
+    // This stops ML anomalies (which often lack specific entities) from sharing the exact same hash and overwriting each other.
+    const entityHash = JSON.stringify(finding.affected_entities || {}).substring(0, 50);
+    const logRefHash = JSON.stringify(logReferences).substring(0, 100);
+    
+    const fingerprintString = `${finding.analyzer}_${finding.finding_type}_${entityHash}_${logRefHash}`;
+    const fingerprint = this.hashFingerprint(fingerprintString);
+
     return {
-      job_id: finding.jobId,
+      job_id: correctJobId,
       fingerprint,
       analyzer: finding.analyzer,
-      analyzer_version: "1.0",
+      analyzer_version: finding.analyzer_version || "1.0",
       finding_type: finding.finding_type,
-      category: finding.analyzer,
+      category: finding.category || finding.analyzer,
       severity: finding.severity,
       confidence: finding.confidence || 0.6,
       title: finding.title,

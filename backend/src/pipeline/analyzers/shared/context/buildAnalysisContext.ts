@@ -1,8 +1,15 @@
-import { AnalysisContext, NormalizedLog, SessionGroup } from "./AnalysisContext";
+import {
+  AnalysisContext,
+  NormalizedLog,
+  SessionGroup,
+} from "./AnalysisContext";
 import { grouping } from "../utils/grouping.util";
 import { timeline } from "../utils/timeline.util";
 
-export const buildAnalysisContext = (logs: NormalizedLog[], jobId: string): AnalysisContext => {
+export const buildAnalysisContext = (
+  logs: NormalizedLog[],
+  jobId: string,
+): AnalysisContext => {
   const context: AnalysisContext = {
     logs,
     jobId,
@@ -35,27 +42,34 @@ export const buildAnalysisContext = (logs: NormalizedLog[], jobId: string): Anal
   for (const log of logs) {
     const userId = log.metadata?.actor?.username || "unknown"; // FIXED
     const ip = log.ip_address || "unknown";
-    
-    const userKey = `user_${userId}`;
-    const ipKey = `ip_${ip}`;
 
-    if (!context.entityTimelines.has(userKey)) context.entityTimelines.set(userKey, []);
+    const userKey = `user:${userId}`;
+    const ipKey = `ip:${ip}`;
+
+    if (!context.entityTimelines.has(userKey))
+      context.entityTimelines.set(userKey, []);
     context.entityTimelines.get(userKey)!.push(log);
 
-    if (!context.entityTimelines.has(ipKey)) context.entityTimelines.set(ipKey, []);
+    if (!context.entityTimelines.has(ipKey))
+      context.entityTimelines.set(ipKey, []);
     context.entityTimelines.get(ipKey)!.push(log);
 
     // Mappings
-    if (!context.userIpMappings.has(userId)) context.userIpMappings.set(userId, new Set());
+    if (!context.userIpMappings.has(userId))
+      context.userIpMappings.set(userId, new Set());
     context.userIpMappings.get(userId)!.add(ip);
 
-    if (!context.ipUserMappings.has(ip)) context.ipUserMappings.set(ip, new Set());
+    if (!context.ipUserMappings.has(ip))
+      context.ipUserMappings.set(ip, new Set());
     context.ipUserMappings.get(ip)!.add(userId);
   }
 
   // ===== 2. SORT ALL TIMELINES =====
   for (const timelineList of context.entityTimelines.values()) {
-    timelineList.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    timelineList.sort(
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    );
   }
 
   // ===== 4. BUILD TIME BUCKETS (1-minute) =====
@@ -64,14 +78,18 @@ export const buildAnalysisContext = (logs: NormalizedLog[], jobId: string): Anal
     bucket.setSeconds(0, 0);
     const bucketKey = bucket.toISOString();
 
-    if (!context.timeBuckets.has(bucketKey)) context.timeBuckets.set(bucketKey, []);
+    if (!context.timeBuckets.has(bucketKey))
+      context.timeBuckets.set(bucketKey, []);
     context.timeBuckets.get(bucketKey)!.push(log);
   }
 
   // ===== 5. CLASSIFY AUTH EVENTS (Context-Aware) =====
   for (const log of logs) {
     // Rely explicitly on the new normalizer's security metadata
-    if (log.metadata?.security !== undefined || log.event_type.includes("LOGIN")) {
+    if (
+      log.metadata?.security !== undefined ||
+      log.event_type.includes("LOGIN")
+    ) {
       context.authEvents.push(log);
       if (log.metadata?.security?.authSuccess === true) {
         context.successfulAuthEvents.push(log);
@@ -85,7 +103,12 @@ export const buildAnalysisContext = (logs: NormalizedLog[], jobId: string): Anal
   for (const log of logs) {
     const endpoint = log.metadata?.action?.endpoint || "";
     const username = log.metadata?.actor?.username || "";
-    if (endpoint.includes("/admin") || endpoint.includes("/api/admin") || username === "admin" || username === "root") {
+    if (
+      endpoint.includes("/admin") ||
+      endpoint.includes("/api/admin") ||
+      username === "admin" ||
+      username === "root"
+    ) {
       context.adminAccessEvents.push(log);
     }
   }
@@ -93,7 +116,11 @@ export const buildAnalysisContext = (logs: NormalizedLog[], jobId: string): Anal
   // ===== 7. CLASSIFY CRITICAL EVENTS =====
   for (const log of logs) {
     const statusCode = log.metadata?.request?.statusCode || 0;
-    if (log.severity === "CRITICAL" || log.severity === "HIGH" || statusCode >= 500) {
+    if (
+      log.severity === "CRITICAL" ||
+      log.severity === "HIGH" ||
+      statusCode >= 500
+    ) {
       context.criticalEvents.push(log);
       context.statistics.totalErrors++;
     }
@@ -105,11 +132,20 @@ export const buildAnalysisContext = (logs: NormalizedLog[], jobId: string): Anal
     const sorted = timeline.sortByTimestamp(endpointLogs);
     if (sorted.length === 0) continue;
 
-    const successCount = endpointLogs.filter(log => (log.metadata?.request?.statusCode || 200) < 400).length;
-    const failureCount = endpointLogs.filter(log => (log.metadata?.request?.statusCode || 200) >= 400).length;
-    const statusCodes = new Set(endpointLogs.map(log => log.metadata?.request?.statusCode || 0).filter(Boolean));
+    const successCount = endpointLogs.filter(
+      (log) => (log.metadata?.request?.statusCode || 200) < 400,
+    ).length;
+    const failureCount = endpointLogs.filter(
+      (log) => (log.metadata?.request?.statusCode || 200) >= 400,
+    ).length;
+    const statusCodes = new Set(
+      endpointLogs
+        .map((log) => log.metadata?.request?.statusCode || 0)
+        .filter(Boolean),
+    );
 
-    if (!context.endpointAccess.has(endpoint)) context.endpointAccess.set(endpoint, []);
+    if (!context.endpointAccess.has(endpoint))
+      context.endpointAccess.set(endpoint, []);
 
     context.endpointAccess.get(endpoint)!.push({
       endpoint,
@@ -145,17 +181,22 @@ const buildSessionGroups = (logs: NormalizedLog[]): SessionGroup[] => {
     let lastTimestamp = new Date(0);
 
     for (const log of sorted) {
-      const timeDiffMinutes = (new Date(log.timestamp).getTime() - lastTimestamp.getTime()) / (1000 * 60);
+      const timeDiffMinutes =
+        (new Date(log.timestamp).getTime() - lastTimestamp.getTime()) /
+        (1000 * 60);
       const currentSessionId = log.metadata?.actor?.sessionId || "";
 
       // Break session IF explicit Session ID changed, OR IP changed, OR 30 min gap
-      const isNewSession = 
-        (currentSessionId && currentSessionId !== lastSessionId && lastSessionId !== "") ||
-        (log.ip_address !== lastIp && lastIp !== "") || 
+      const isNewSession =
+        (currentSessionId &&
+          currentSessionId !== lastSessionId &&
+          lastSessionId !== "") ||
+        (log.ip_address !== lastIp && lastIp !== "") ||
         timeDiffMinutes > 30;
 
       if (isNewSession) {
-        if (currentSession.length > 0) sessions.push(createSessionGroup(userId, currentSession));
+        if (currentSession.length > 0)
+          sessions.push(createSessionGroup(userId, currentSession));
         currentSession = [log];
       } else {
         currentSession.push(log);
@@ -166,25 +207,36 @@ const buildSessionGroups = (logs: NormalizedLog[]): SessionGroup[] => {
       lastTimestamp = new Date(log.timestamp);
     }
 
-    if (currentSession.length > 0) sessions.push(createSessionGroup(userId, currentSession));
+    if (currentSession.length > 0)
+      sessions.push(createSessionGroup(userId, currentSession));
   }
 
   return sessions;
 };
 
-const createSessionGroup = (userId: string, logs: NormalizedLog[]): SessionGroup => {
+const createSessionGroup = (
+  userId: string,
+  logs: NormalizedLog[],
+): SessionGroup => {
   const sorted = timeline.sortByTimestamp(logs);
-  
+
   // Explicit Session ID from log, or fallback to generated ID
-  const explicitSessionId = logs.find(l => l.metadata?.actor?.sessionId)?.metadata?.actor?.sessionId;
+  const explicitSessionId = logs.find((l) => l.metadata?.actor?.sessionId)
+    ?.metadata?.actor?.sessionId;
 
   return {
-    sessionId: explicitSessionId || `session_${userId}_${new Date(sorted[0]!.timestamp).getTime()}`,
+    sessionId:
+      explicitSessionId ||
+      `session_${userId}_${new Date(sorted[0]!.timestamp).getTime()}`,
     userId,
     startTime: new Date(sorted[0]!.timestamp),
     endTime: new Date(sorted[sorted.length - 1]!.timestamp),
-    ipAddresses: new Set(logs.map(log => log.ip_address).filter(Boolean)),
-    userAgents: new Set(logs.map(log => log.metadata?.client?.userAgent).filter(Boolean) as string[]),
+    ipAddresses: new Set(logs.map((log) => log.ip_address).filter(Boolean)),
+    userAgents: new Set(
+      logs
+        .map((log) => log.metadata?.client?.userAgent)
+        .filter(Boolean) as string[],
+    ),
     events: logs,
   };
 };
