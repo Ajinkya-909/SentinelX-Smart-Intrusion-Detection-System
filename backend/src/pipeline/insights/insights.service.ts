@@ -27,6 +27,9 @@ import {
 // TYPES
 // ==========================================
 
+// FIX: Added `evidence` and `detected_at` fields.
+// `evidence` is needed so buildMasterContext can forward forensic data to the LLM.
+// `detected_at` is needed as a reliable timestamp fallback in generateThreatTimeline.
 interface AnalyzerFindingWithLogs {
   finding_id: string;
   analyzer: string;
@@ -38,6 +41,8 @@ interface AnalyzerFindingWithLogs {
   recommendation?: string;
   log_references?: any;
   affected_entities?: any;
+  evidence?: any;        // FIX: was missing — LLM never received forensic evidence
+  detected_at?: Date;    // FIX: was missing — needed as timestamp fallback
   referenced_logs: {
     id: string;
     timestamp: Date;
@@ -71,13 +76,21 @@ interface InsightGenerationResult {
   validation_errors: any[];
 }
 
+// IPv4 regex — same pattern used in insight.validator.ts so we can pre-filter
+// before validation and avoid silent drops of the entire TOP_ATTACKERS insight.
+// NOTE: If insight.validator.ts is updated to accept any string (to support
+// usernames/hostnames), this filter can be removed from generateTopAttackers().
+const IPV4_REGEX = /^(\d{1,3}\.){3}\d{1,3}$/;
+
 // ==========================================
 // INSIGHTS SERVICE
 // ==========================================
 
 export const insightsService = {
   /**
-   * Load findings and normalized logs once for both deterministic and LLM insight generation.
+   * Load findings and normalized logs once for both deterministic and LLM
+   * insight generation. Calling this once in the orchestrator prevents the
+   * double DB round-trip that existed in the previous architecture.
    */
   async loadInsightSourceData(jobId: string): Promise<InsightSourceData> {
     const [findings, normalizedLogs] = await Promise.all([
@@ -89,8 +102,8 @@ export const insightsService = {
   },
 
   /**
-   * Generate all insights for a job
-   * Entry point for insights generation stage
+   * Generate all deterministic insights for a job.
+   * Accepts pre-loaded source data from the orchestrator to avoid re-fetching.
    */
   async generateInsightsForJob(
     jobId: string,
@@ -107,8 +120,9 @@ export const insightsService = {
         preloadedData || (await this.loadInsightSourceData(jobId));
       const { findings, normalizedLogs } = sourceData;
 
-      // ===== STEP 1: LOAD ANALYZER FINDINGS =====
-      logger.info(`[INSIGHTS SERVICE] Loading analyzer findings...`);
+      logger.info(
+        `[INSIGHTS SERVICE] Source data: ${findings.length} findings, ${normalizedLogs.length} logs`,
+      );
 
       if (findings.length === 0) {
         logger.warn(
@@ -124,24 +138,7 @@ export const insightsService = {
         };
       }
 
-      logger.info(
-        `[INSIGHTS SERVICE] Loaded ${findings.length} analyzer findings`,
-      );
-
-      // ===== STEP 2: LOAD NORMALIZED LOGS =====
-      logger.info(`[INSIGHTS SERVICE] Loading normalized logs...`);
-
-      if (normalizedLogs.length === 0) {
-        logger.warn(
-          `[INSIGHTS SERVICE] No normalized logs found for job ${jobId}`,
-        );
-      } else {
-        logger.info(
-          `[INSIGHTS SERVICE] Loaded ${normalizedLogs.length} normalized logs`,
-        );
-      }
-
-      // ===== STEP 3: GENERATE DETERMINISTIC INSIGHTS =====
+      // Generate all deterministic insights
       logger.info(`[INSIGHTS SERVICE] Generating deterministic insights...`);
 
       const deterministicInsights = await this.generateDeterministicInsights(
@@ -151,32 +148,7 @@ export const insightsService = {
       );
 
       logger.info(
-        `[INSIGHTS SERVICE] Generated ${deterministicInsights.length} deterministic insights`,
-      );
-
-      // ===== STEP 4: BUILD AI CONTEXT =====
-      logger.info(`[INSIGHTS SERVICE] Building AI context for LLM...`);
-
-      const context = await this.buildAIContext(
-        jobId,
-        findings,
-        normalizedLogs,
-        deterministicInsights.find(
-          (i) => i.insight_type === "ACTIVITY_TIMELINE",
-        )?.data as ActivityTimelineInsightData | undefined,
-      );
-
-      logger.info(`[INSIGHTS SERVICE] AI context built successfully`);
-
-      // ===== STEP 5: RETURN FOR LLM PROCESSING =====
-      logger.info(
-        `[INSIGHTS SERVICE] Returning context for LLM insight generation`,
-      );
-
-      logger.info(
-        `[INSIGHTS SERVICE] Insights generation prep completed in ${
-          Date.now() - startTime
-        }ms`,
+        `[INSIGHTS SERVICE] Generated ${deterministicInsights.length} deterministic insights in ${Date.now() - startTime}ms`,
       );
 
       return {
@@ -196,7 +168,9 @@ export const insightsService = {
   },
 
   /**
-   * Load analyzer findings with their referenced normalized logs
+   * Load analyzer findings with their referenced normalized logs.
+   * FIX: Now also loads `evidence` and `detected_at` from each finding so the
+   * LLM prompt builder receives full forensic context.
    */
   async loadFindingsWithReferences(
     jobId: string,
@@ -211,7 +185,6 @@ export const insightsService = {
         return [];
       }
 
-      // Enrich findings with referenced logs
       const enrichedFindings: AnalyzerFindingWithLogs[] = [];
 
       for (const finding of findings) {
@@ -222,11 +195,7 @@ export const insightsService = {
         let referencedLogs: any[] = [];
         if (logIds.length > 0) {
           referencedLogs = await prisma.normalized_logs.findMany({
-            where: {
-              id: {
-                in: logIds,
-              },
-            },
+            where: { id: { in: logIds } },
           });
         }
 
@@ -235,14 +204,33 @@ export const insightsService = {
           analyzer: finding.analyzer,
           finding_type: finding.finding_type,
           severity: finding.severity,
-          confidence: finding.confidence ?? undefined,
-          summary: finding.summary ?? undefined,
-          title: finding.title ?? undefined,
-          recommendation: finding.recommendation ?? undefined,
           log_references: finding.log_references,
           affected_entities: finding.affected_entities,
+          // FIX: Include evidence so buildMasterContext can inject it into the
+          // LLM prompt. Previously this field was never loaded, causing the LLM
+          // to receive no forensic data and generate generic/hallucinated insights.
+          ...(finding.confidence !== null && finding.confidence !== undefined
+            ? { confidence: finding.confidence }
+            : {}),
+          ...(finding.summary !== null && finding.summary !== undefined
+            ? { summary: finding.summary }
+            : {}),
+          ...(finding.title !== null && finding.title !== undefined
+            ? { title: finding.title }
+            : {}),
+          ...(finding.recommendation !== null && finding.recommendation !== undefined
+            ? { recommendation: finding.recommendation }
+            : {}),
+          ...(finding.evidence !== null && finding.evidence !== undefined
+            ? { evidence: finding.evidence }
+            : {}),
+          // FIX: Include detected_at so generateThreatTimeline has a reliable
+          // fallback timestamp when referenced_logs is empty.
+          ...(finding.detected_at !== null && finding.detected_at !== undefined
+            ? { detected_at: finding.detected_at }
+            : {}),
           referenced_logs: referencedLogs,
-        } as any);
+        });
       }
 
       return enrichedFindings;
@@ -257,7 +245,9 @@ export const insightsService = {
   },
 
   /**
-   * Generate deterministic insights (no LLM required)
+   * Generate all deterministic insights (no LLM required).
+   * Each insight type is independently validated so a failure in one type
+   * does not prevent the others from being generated.
    */
   async generateDeterministicInsights(
     jobId: string,
@@ -271,184 +261,146 @@ export const insightsService = {
       // ===== ACTIVITY_TIMELINE =====
       logger.info(`[INSIGHTS SERVICE] Generating ACTIVITY_TIMELINE...`);
       const activityTimeline = this.generateActivityTimeline(normalizedLogs);
-      const activityInsight: InsightRecord = {
-        job_id: jobId,
-        insight_type: "ACTIVITY_TIMELINE",
-        title: "Activity Timeline",
-        description:
-          "Timeline of all normalized log events showing system activity over time",
-        severity: "INFO",
-        data: activityTimeline,
-        generated_by: "DETERMINISTIC",
-        is_visible: true,
-        display_order: 5,
-      };
-
       const activityValidation = insightValidators.validateInsightData(
         "ACTIVITY_TIMELINE",
         activityTimeline,
       );
       if (activityValidation.valid) {
-        insights.push(activityInsight);
+        insights.push({
+          job_id: jobId,
+          insight_type: "ACTIVITY_TIMELINE",
+          title: "Activity Timeline",
+          description:
+            "Timeline of all normalized log events showing system activity over time",
+          severity: "INFO",
+          data: activityTimeline,
+          generated_by: "DETERMINISTIC",
+          is_visible: true,
+          display_order: 5,
+        });
       } else {
         logger.warn(
-          `[INSIGHTS SERVICE] ACTIVITY_TIMELINE validation failed: ${JSON.stringify(
-            activityValidation.errors,
-          )}`,
+          `[INSIGHTS SERVICE] ACTIVITY_TIMELINE validation failed: ${JSON.stringify(activityValidation.errors)}`,
         );
-        validationErrors.push({
-          type: "ACTIVITY_TIMELINE",
-          errors: activityValidation.errors,
-        });
+        validationErrors.push({ type: "ACTIVITY_TIMELINE", errors: activityValidation.errors });
       }
 
       // ===== SEVERITY_DISTRIBUTION =====
       logger.info(`[INSIGHTS SERVICE] Generating SEVERITY_DISTRIBUTION...`);
       const severityDist = this.generateSeverityDistribution(findings);
-      const severityInsight: InsightRecord = {
-        job_id: jobId,
-        insight_type: "SEVERITY_DISTRIBUTION",
-        title: "Threat Severity Distribution",
-        description: "Distribution of findings by severity level",
-        data: severityDist,
-        generated_by: "DETERMINISTIC",
-        is_visible: true,
-        display_order: 3,
-      };
-
       const severityValidation = insightValidators.validateInsightData(
         "SEVERITY_DISTRIBUTION",
         severityDist,
       );
       if (severityValidation.valid) {
-        insights.push(severityInsight);
-      } else {
-        logger.warn(
-          `[INSIGHTS SERVICE] SEVERITY_DISTRIBUTION validation failed`,
-        );
-        validationErrors.push({
-          type: "SEVERITY_DISTRIBUTION",
-          errors: severityValidation.errors,
+        insights.push({
+          job_id: jobId,
+          insight_type: "SEVERITY_DISTRIBUTION",
+          title: "Threat Severity Distribution",
+          description: "Distribution of findings by severity level",
+          data: severityDist,
+          generated_by: "DETERMINISTIC",
+          is_visible: true,
+          display_order: 3,
         });
+      } else {
+        logger.warn(`[INSIGHTS SERVICE] SEVERITY_DISTRIBUTION validation failed`);
+        validationErrors.push({ type: "SEVERITY_DISTRIBUTION", errors: severityValidation.errors });
       }
 
       // ===== TOP_ATTACKERS =====
       logger.info(`[INSIGHTS SERVICE] Generating TOP_ATTACKERS...`);
       const topAttackers = this.generateTopAttackers(findings);
-
       if (topAttackers.attackers.length > 0) {
-        const topAttackersInsight: InsightRecord = {
-          job_id: jobId,
-          insight_type: "TOP_ATTACKERS",
-          title: "Top Attackers",
-          description: "Most suspicious IPs and Entities",
-          data: topAttackers,
-          generated_by: "DETERMINISTIC",
-          is_visible: true,
-          display_order: 4,
-        };
-
         const topAttackersValidation = insightValidators.validateInsightData(
           "TOP_ATTACKERS",
           topAttackers,
         );
         if (topAttackersValidation.valid) {
-          insights.push(topAttackersInsight);
+          insights.push({
+            job_id: jobId,
+            insight_type: "TOP_ATTACKERS",
+            title: "Top Attackers",
+            description: "Most suspicious IPs and entities by threat count",
+            data: topAttackers,
+            generated_by: "DETERMINISTIC",
+            is_visible: true,
+            display_order: 4,
+          });
         } else {
           logger.warn(`[INSIGHTS SERVICE] TOP_ATTACKERS validation failed`);
-          validationErrors.push({
-            type: "TOP_ATTACKERS",
-            errors: topAttackersValidation.errors,
-          });
+          validationErrors.push({ type: "TOP_ATTACKERS", errors: topAttackersValidation.errors });
         }
       }
 
       // ===== EVENT_TYPE_DISTRIBUTION =====
       logger.info(`[INSIGHTS SERVICE] Generating EVENT_TYPE_DISTRIBUTION...`);
       const eventDist = this.generateEventTypeDistribution(normalizedLogs);
-
       if (eventDist.distribution.length > 0) {
-        const eventDistInsight: InsightRecord = {
-          job_id: jobId,
-          insight_type: "EVENT_TYPE_DISTRIBUTION",
-          title: "Event Type Distribution",
-          description: "Distribution of log events by type",
-          data: eventDist,
-          generated_by: "DETERMINISTIC",
-          is_visible: true,
-          display_order: 6,
-        };
-
         const eventDistValidation = insightValidators.validateInsightData(
           "EVENT_TYPE_DISTRIBUTION",
           eventDist,
         );
         if (eventDistValidation.valid) {
-          insights.push(eventDistInsight);
-        } else {
-          logger.warn(
-            `[INSIGHTS SERVICE] EVENT_TYPE_DISTRIBUTION validation failed`,
-          );
-          validationErrors.push({
-            type: "EVENT_TYPE_DISTRIBUTION",
-            errors: eventDistValidation.errors,
+          insights.push({
+            job_id: jobId,
+            insight_type: "EVENT_TYPE_DISTRIBUTION",
+            title: "Event Type Distribution",
+            description: "Distribution of log events by type",
+            data: eventDist,
+            generated_by: "DETERMINISTIC",
+            is_visible: true,
+            display_order: 6,
           });
+        } else {
+          logger.warn(`[INSIGHTS SERVICE] EVENT_TYPE_DISTRIBUTION validation failed`);
+          validationErrors.push({ type: "EVENT_TYPE_DISTRIBUTION", errors: eventDistValidation.errors });
         }
       }
 
       // ===== KPI METRICS =====
       logger.info(`[INSIGHTS SERVICE] Generating KPI...`);
       const kpi = this.generateKPIMetrics(findings, normalizedLogs);
-      const kpiInsight: InsightRecord = {
-        job_id: jobId,
-        insight_type: "KPI",
-        title: "Key Performance Indicators",
-        description: "Critical security metrics and indicators",
-        data: kpi,
-        generated_by: "DETERMINISTIC",
-        is_visible: true,
-        display_order: 1,
-      };
-
       const kpiValidation = insightValidators.validateInsightData("KPI", kpi);
       if (kpiValidation.valid) {
-        insights.push(kpiInsight);
+        insights.push({
+          job_id: jobId,
+          insight_type: "KPI",
+          title: "Key Performance Indicators",
+          description: "Critical security metrics and indicators",
+          data: kpi,
+          generated_by: "DETERMINISTIC",
+          is_visible: true,
+          display_order: 1,
+        });
       } else {
         logger.warn(`[INSIGHTS SERVICE] KPI validation failed`);
-        validationErrors.push({
-          type: "KPI",
-          errors: kpiValidation.errors,
-        });
+        validationErrors.push({ type: "KPI", errors: kpiValidation.errors });
       }
 
       // ===== THREAT_TIMELINE =====
       logger.info(`[INSIGHTS SERVICE] Generating THREAT_TIMELINE...`);
       const threatTimeline = this.generateThreatTimeline(findings);
       if (threatTimeline.points.length > 0) {
-        const threatTimelineInsight: InsightRecord = {
-          job_id: jobId,
-          insight_type: "THREAT_TIMELINE",
-          title: "Threat Timeline",
-          description: "Timeline of suspicious activity and threat detections",
-          severity: "INFO",
-          data: threatTimeline,
-          generated_by: "DETERMINISTIC",
-          is_visible: true,
-          display_order: 7,
-        };
-
         const threatTimelineValidation = insightValidators.validateInsightData(
           "THREAT_TIMELINE",
           threatTimeline,
         );
         if (threatTimelineValidation.valid) {
-          insights.push(threatTimelineInsight);
+          insights.push({
+            job_id: jobId,
+            insight_type: "THREAT_TIMELINE",
+            title: "Threat Timeline",
+            description: "Timeline of suspicious activity and threat detections",
+            severity: "INFO",
+            data: threatTimeline,
+            generated_by: "DETERMINISTIC",
+            is_visible: true,
+            display_order: 7,
+          });
         } else {
           logger.warn(`[INSIGHTS SERVICE] THREAT_TIMELINE validation failed`);
-          validationErrors.push({
-            type: "THREAT_TIMELINE",
-            errors: threatTimelineValidation.errors,
-          });
+          validationErrors.push({ type: "THREAT_TIMELINE", errors: threatTimelineValidation.errors });
         }
       }
 
@@ -456,29 +408,24 @@ export const insightsService = {
       logger.info(`[INSIGHTS SERVICE] Generating GEO_ANALYSIS...`);
       const geoAnalysis = this.generateGeoAnalysis(findings);
       if (geoAnalysis.countries && geoAnalysis.countries.length > 0) {
-        const geoAnalysisInsight: InsightRecord = {
-          job_id: jobId,
-          insight_type: "GEO_ANALYSIS",
-          title: "Geographic Analysis",
-          description: "Geographic distribution of attack sources",
-          data: geoAnalysis,
-          generated_by: "DETERMINISTIC",
-          is_visible: true,
-          display_order: 8,
-        };
-
         const geoValidation = insightValidators.validateInsightData(
           "GEO_ANALYSIS",
           geoAnalysis,
         );
         if (geoValidation.valid) {
-          insights.push(geoAnalysisInsight);
+          insights.push({
+            job_id: jobId,
+            insight_type: "GEO_ANALYSIS",
+            title: "Geographic Analysis",
+            description: "Geographic distribution of attack sources",
+            data: geoAnalysis,
+            generated_by: "DETERMINISTIC",
+            is_visible: true,
+            display_order: 8,
+          });
         } else {
           logger.warn(`[INSIGHTS SERVICE] GEO_ANALYSIS validation failed`);
-          validationErrors.push({
-            type: "GEO_ANALYSIS",
-            errors: geoValidation.errors,
-          });
+          validationErrors.push({ type: "GEO_ANALYSIS", errors: geoValidation.errors });
         }
       }
 
@@ -486,42 +433,31 @@ export const insightsService = {
       logger.info(`[INSIGHTS SERVICE] Generating ALERT...`);
       const alerts = this.generateAlerts(findings);
       if (alerts.alerts && alerts.alerts.length > 0) {
-        const alertInsight: InsightRecord = {
-          job_id: jobId,
-          insight_type: "ALERT",
-          title: "Critical Security Alerts",
-          description: "Priority security alerts and findings",
-          severity: alerts.highest_severity || "MEDIUM",
-          data: alerts,
-          generated_by: "DETERMINISTIC",
-          is_visible: true,
-          display_order: 2,
-        };
-
         const alertValidation = insightValidators.validateInsightData(
           "ALERT",
           alerts,
         );
         if (alertValidation.valid) {
-          insights.push(alertInsight);
+          insights.push({
+            job_id: jobId,
+            insight_type: "ALERT",
+            title: "Critical Security Alerts",
+            description: "Priority security alerts and findings",
+            severity: alerts.highest_severity || "MEDIUM",
+            data: alerts,
+            generated_by: "DETERMINISTIC",
+            is_visible: true,
+            display_order: 2,
+          });
         } else {
           logger.warn(`[INSIGHTS SERVICE] ALERT validation failed`);
-          validationErrors.push({
-            type: "ALERT",
-            errors: alertValidation.errors,
-          });
+          validationErrors.push({ type: "ALERT", errors: alertValidation.errors });
         }
       }
 
       logger.info(
-        `[INSIGHTS SERVICE] Generated ${insights.length} deterministic insights`,
+        `[INSIGHTS SERVICE] Generated ${insights.length} deterministic insights. Validation errors: ${validationErrors.length}`,
       );
-
-      if (validationErrors.length > 0) {
-        logger.warn(
-          `[INSIGHTS SERVICE] ${validationErrors.length} validation errors during deterministic generation`,
-        );
-      }
 
       return insights;
     } catch (error) {
@@ -535,7 +471,15 @@ export const insightsService = {
   },
 
   /**
-   * Generate THREAT_TIMELINE from findings
+   * Generate THREAT_TIMELINE from findings.
+   *
+   * FIX: The previous version used `new Date()` as a fallback when
+   * `referenced_logs` was empty (e.g. when log_references was stored as null
+   * in the DB). This caused all such findings to cluster at the current time,
+   * producing a completely bogus single-point timeline.
+   *
+   * Fix: Use `finding.detected_at` as a reliable fallback — it is always
+   * populated by the DB and reflects when the threat was actually detected.
    */
   generateThreatTimeline(findings: AnalyzerFindingWithLogs[]): any {
     if (findings.length === 0) {
@@ -549,17 +493,21 @@ export const insightsService = {
       };
     }
 
-    // Group findings by time buckets (15-minute buckets)
+    const bucketSizeMs = 15 * 60 * 1000; // 15-minute buckets
     const bucketMap = new Map<
       string,
       { threat_count: number; severities: Set<string> }
     >();
-    const bucketSizeMs = 15 * 60 * 1000; // 15 minutes
 
     for (const finding of findings) {
-      const timestamp = new Date(
-        finding.referenced_logs[0]?.timestamp || new Date(),
-      );
+      // FIX: Prefer the first referenced log's timestamp; fall back to the
+      // finding's own detected_at rather than new Date().
+      const rawTimestamp =
+        finding.referenced_logs[0]?.timestamp ||
+        finding.detected_at ||
+        new Date();
+
+      const timestamp = new Date(rawTimestamp);
       const bucketStart = new Date(
         Math.floor(timestamp.getTime() / bucketSizeMs) * bucketSizeMs,
       );
@@ -567,9 +515,8 @@ export const insightsService = {
 
       const existing = bucketMap.get(bucketKey) || {
         threat_count: 0,
-        severities: new Set(),
+        severities: new Set<string>(),
       };
-
       existing.threat_count++;
       existing.severities.add(finding.severity || "MEDIUM");
       bucketMap.set(bucketKey, existing);
@@ -582,54 +529,51 @@ export const insightsService = {
           ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"].find((s) =>
             data.severities.has(s),
           ) || "INFO";
-
-        return {
-          timestamp,
-          threat_count: data.threat_count,
-          severity: topSeverity,
-        };
+        return { timestamp, threat_count: data.threat_count, severity: topSeverity };
       });
 
-    const sortedFindings = findings.sort(
-      (a, b) =>
-        new Date(a.referenced_logs[0]?.timestamp || 0).getTime() -
-        new Date(b.referenced_logs[0]?.timestamp || 0).getTime(),
+    // Determine time range from the same resolved timestamps
+    const resolvedTimestamps = findings.map((f) =>
+      new Date(
+        f.referenced_logs[0]?.timestamp || f.detected_at || new Date(),
+      ).getTime(),
     );
+    const minTs = Math.min(...resolvedTimestamps);
+    const maxTs = Math.max(...resolvedTimestamps);
 
     return {
       points,
       total_threats: findings.length,
       time_range: {
-        start: (
-          sortedFindings[0]?.referenced_logs[0]?.timestamp || new Date()
-        ).toISOString(),
-        end: (
-          sortedFindings[sortedFindings.length - 1]?.referenced_logs[0]
-            ?.timestamp || new Date()
-        ).toISOString(),
+        start: new Date(minTs).toISOString(),
+        end: new Date(maxTs).toISOString(),
       },
     };
   },
 
   /**
-   * Generate GEO_ANALYSIS from findings
+   * Generate GEO_ANALYSIS from findings.
+   *
+   * FIX: The previous version returned `{ countries, total_countries }` but
+   * GeoAnalysisInsightSchema expects `{ countries, total_requests }`. This
+   * caused the entire GEO_ANALYSIS insight to be silently dropped on every run.
+   *
+   * NOTE: The schema also requires `total_requests` (not `total_countries`) and
+   * does NOT include `threat_count` per country. The country objects returned
+   * here match what GeoAnalysisInsightSchema actually validates.
    */
   generateGeoAnalysis(findings: AnalyzerFindingWithLogs[]): any {
     const countryMap = new Map<
       string,
-      { request_count: number; threat_count: number; severity: string }
+      { request_count: number; severity: string }
     >();
 
-    // Simple country mapping based on IP ranges (basic implementation)
     const getCountryFromIP = (ip: string): string => {
       if (!ip) return "Unknown";
-      // This is a simplified mapping - in production use GeoIP database
       const parts = ip.split(".");
       if (!parts[0]) return "Unknown";
-      const firstOctet = parseInt(parts[0]);
-
-      if (firstOctet >= 1 && firstOctet <= 14) return "United States";
-      if (firstOctet >= 15 && firstOctet <= 24) return "United States";
+      const firstOctet = parseInt(parts[0], 10);
+      if (firstOctet >= 1 && firstOctet <= 24) return "United States";
       if (firstOctet >= 25 && firstOctet <= 49) return "Europe";
       if (firstOctet >= 50 && firstOctet <= 99) return "Asia";
       if (firstOctet >= 100 && firstOctet <= 149) return "Europe";
@@ -639,26 +583,20 @@ export const insightsService = {
       return "Other";
     };
 
+    const severityOrder: Record<string, number> = {
+      CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, INFO: 0,
+    };
+
     for (const finding of findings) {
       for (const log of finding.referenced_logs) {
         if (log.ip_address) {
           const country = getCountryFromIP(log.ip_address);
           const existing = countryMap.get(country) || {
             request_count: 0,
-            threat_count: 0,
             severity: "LOW",
           };
 
           existing.request_count++;
-          existing.threat_count++;
-
-          const severityOrder: Record<string, number> = {
-            CRITICAL: 4,
-            HIGH: 3,
-            MEDIUM: 2,
-            LOW: 1,
-            INFO: 0,
-          };
 
           if (
             (severityOrder[finding.severity] || 0) >
@@ -676,31 +614,32 @@ export const insightsService = {
       .map(([country, data]) => ({
         country,
         request_count: data.request_count,
-        threat_count: data.threat_count,
         severity: data.severity,
       }))
       .sort((a, b) => b.request_count - a.request_count);
 
-    return {
-      countries,
-      total_countries: countryMap.size,
-    };
+    // FIX: Return `total_requests` (sum of all request_counts) to match
+    // GeoAnalysisInsightSchema. The old field name `total_countries` caused
+    // every GEO_ANALYSIS insight to fail Zod validation and be dropped.
+    const total_requests = countries.reduce(
+      (sum, c) => sum + c.request_count,
+      0,
+    );
+
+    return { countries, total_requests };
   },
 
   /**
-   * Generate ALERT insights from findings
+   * Generate ALERT insights from findings.
    */
   generateAlerts(findings: AnalyzerFindingWithLogs[]): any {
     const criticalAndHighFindings = findings
       .filter((f) => f.severity === "CRITICAL" || f.severity === "HIGH")
       .sort((a, b) => {
-        const order: Record<string, number> = {
-          CRITICAL: 0,
-          HIGH: 1,
-        };
+        const order: Record<string, number> = { CRITICAL: 0, HIGH: 1 };
         return (order[a.severity] ?? 2) - (order[b.severity] ?? 2);
       })
-      .slice(0, 10); // Top 10 critical/high alerts
+      .slice(0, 10);
 
     const alerts = criticalAndHighFindings.map((finding) => ({
       title: finding.title || finding.finding_type,
@@ -710,89 +649,29 @@ export const insightsService = {
         `${finding.analyzer} detected ${finding.finding_type}`,
       recommendation:
         finding.recommendation || `Review findings from ${finding.analyzer}`,
+      // finding_id is a DB UUID — safe to include in the uuid-validated array
       related_findings: [finding.finding_id],
     }));
 
     const severityOrder: Record<string, number> = {
-      CRITICAL: 4,
-      HIGH: 3,
-      MEDIUM: 2,
-      LOW: 1,
-      INFO: 0,
+      CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, INFO: 0,
     };
 
     const highestSeverity =
       findings.length > 0
-        ? findings.reduce((highest, current) => {
-            return (severityOrder[current.severity] ?? 0) >
-              (severityOrder[highest.severity] ?? 0)
+        ? findings.reduce((highest, current) =>
+            (severityOrder[current.severity] ?? 0) >
+            (severityOrder[highest.severity] ?? 0)
               ? current
-              : highest;
-          }).severity
+              : highest,
+          ).severity
         : "INFO";
 
-    return {
-      alerts,
-      alert_count: alerts.length,
-      highest_severity: highestSeverity,
-    };
+    return { alerts, alert_count: alerts.length, highest_severity: highestSeverity };
   },
 
   /**
-   * Load ONLY referenced logs (for LLM context)
-   * Returns unique logs that are referenced by analyzer findings
-   */
-  async loadReferencedLogsSelectively(
-    jobId: string,
-    findings: AnalyzerFindingWithLogs[],
-  ): Promise<any[]> {
-    try {
-      // Extract all unique log IDs from findings
-      const logIds = new Set<string>();
-
-      for (const finding of findings) {
-        const refLogIds = Array.isArray(finding.log_references)
-          ? finding.log_references
-          : (finding.log_references as any)?.log_ids || [];
-        for (const logId of refLogIds) {
-          logIds.add(logId);
-        }
-      }
-
-      if (logIds.size === 0) {
-        logger.warn(
-          `[INSIGHTS SERVICE] No referenced logs found for job ${jobId}`,
-        );
-        return [];
-      }
-
-      // Fetch only these specific logs
-      const logs = await prisma.normalized_logs.findMany({
-        where: {
-          id: {
-            in: Array.from(logIds),
-          },
-        },
-        orderBy: { timestamp: "asc" },
-      });
-
-      logger.info(
-        `[INSIGHTS SERVICE] Loaded ${logs.length} unique referenced logs for LLM context`,
-      );
-
-      return logs;
-    } catch (error) {
-      logger.error(
-        `[INSIGHTS SERVICE] Error loading referenced logs: ${
-          error instanceof Error ? error.message : error
-        }`,
-      );
-      throw error;
-    }
-  },
-
-  /**
-   * Generate ACTIVITY_TIMELINE from normalized logs
+   * Generate ACTIVITY_TIMELINE from normalized logs.
    */
   generateActivityTimeline(logs: any[]): ActivityTimelineInsightData {
     if (logs.length === 0) {
@@ -806,9 +685,8 @@ export const insightsService = {
       };
     }
 
-    // Group logs by 5-minute buckets
     const bucketMap = new Map<string, number>();
-    const bucketSizeMs = 5 * 60 * 1000; // 5 minutes
+    const bucketSizeMs = 5 * 60 * 1000; // 5-minute buckets
 
     for (const log of logs) {
       const timestamp = new Date(log.timestamp);
@@ -816,19 +694,14 @@ export const insightsService = {
         Math.floor(timestamp.getTime() / bucketSizeMs) * bucketSizeMs,
       );
       const bucketKey = bucketStart.toISOString();
-
       bucketMap.set(bucketKey, (bucketMap.get(bucketKey) || 0) + 1);
     }
 
-    // Sort and convert to points
     const points = Array.from(bucketMap.entries())
       .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
-      .map(([timestamp, count]) => ({
-        timestamp,
-        event_count: count,
-      }));
+      .map(([timestamp, count]) => ({ timestamp, event_count: count }));
 
-    const sortedLogs = logs.sort(
+    const sortedLogs = [...logs].sort(
       (a, b) =>
         new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
     );
@@ -837,25 +710,19 @@ export const insightsService = {
       points,
       total_events: logs.length,
       time_range: {
-        start: sortedLogs[0].timestamp.toISOString(),
-        end: sortedLogs[sortedLogs.length - 1].timestamp.toISOString(),
+        start: new Date(sortedLogs[0].timestamp).toISOString(),
+        end: new Date(sortedLogs[sortedLogs.length - 1].timestamp).toISOString(),
       },
     };
   },
 
   /**
-   * Generate SEVERITY_DISTRIBUTION from findings
+   * Generate SEVERITY_DISTRIBUTION from findings.
    */
   generateSeverityDistribution(
     findings: AnalyzerFindingWithLogs[],
   ): SeverityDistributionInsightData {
-    const severityCounts = {
-      CRITICAL: 0,
-      HIGH: 0,
-      MEDIUM: 0,
-      LOW: 0,
-      INFO: 0,
-    };
+    const severityCounts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
 
     for (const finding of findings) {
       const severity = (finding.severity || "INFO").toUpperCase();
@@ -870,30 +737,37 @@ export const insightsService = {
       .map(([severity, count]) => ({
         severity: severity as any,
         count,
-        percentage: Math.round((count / total) * 100 * 100) / 100, // 2 decimals
+        percentage: Math.round((count / total) * 100 * 100) / 100,
       }))
       .sort((a, b) => {
         const order: Record<string, number> = {
-          CRITICAL: 0,
-          HIGH: 1,
-          MEDIUM: 2,
-          LOW: 3,
-          INFO: 4,
+          CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4,
         };
-        const aOrder = order[a.severity as string] ?? 5;
-        const bOrder = order[b.severity as string] ?? 5;
-        return aOrder - bOrder;
+        return (order[a.severity as string] ?? 5) - (order[b.severity as string] ?? 5);
       });
 
-    return {
-      distribution,
-      total_findings: total,
-    };
+    return { distribution, total_findings: total };
   },
 
   /**
-   * Generate TOP_ATTACKERS from findings
-   * PATCHED: Context-Aware entity extraction (no longer relying on hardcoded .ips array)
+   * Generate TOP_ATTACKERS from findings.
+   *
+   * FIX: The previous version stored usernames and non-IP entity strings in the
+   * `ip` field, which caused every TOP_ATTACKERS insight to fail the Zod IPv4
+   * regex in TopAttackersInsightSchema and be silently dropped.
+   *
+   * Strategy:
+   * 1. Collect ALL entity identifiers (IPs and usernames) in `attackerMap` so
+   *    the counts and severity aggregation remain accurate.
+   * 2. When building the final `attackers` array, filter to valid IPv4 addresses
+   *    only — these are the entries that pass the validator.
+   * 3. Non-IP entities (usernames, hostnames) still reach the LLM via
+   *    buildMasterContext which reads from affected_entities directly, so the
+   *    LLM context is not degraded.
+   *
+   * NOTE: If insight.validator.ts is updated to use `z.string().min(1)` for the
+   * `ip` field (and the field is renamed to `entity`), this IPv4 filter can be
+   * removed and all entity types will be persisted.
    */
   generateTopAttackers(
     findings: AnalyzerFindingWithLogs[],
@@ -904,20 +778,18 @@ export const insightsService = {
         request_count: number;
         threat_count: number;
         severities: Set<string>;
-        countries: Set<string>;
         last_seen?: Date;
       }
     >();
 
-    // 1. Aggregate data from findings and their logs (IPs from logs)
+    // Pass 1: Collect from referenced log IP addresses
     for (const finding of findings) {
       for (const log of finding.referenced_logs) {
         if (log.ip_address && log.ip_address !== "unknown") {
           const existing = attackerMap.get(log.ip_address) || {
             request_count: 0,
             threat_count: 0,
-            severities: new Set(),
-            countries: new Set(),
+            severities: new Set<string>(),
           };
 
           existing.request_count++;
@@ -935,14 +807,14 @@ export const insightsService = {
       }
     }
 
-    // 2. Aggregate from affected_entities dynamically (The Fix!)
+    // Pass 2: Collect from affected_entities (IPs and non-IP entities alike)
+    // These contribute to threat counts; the IPv4 filter below ensures only
+    // valid IPs end up in the persisted insight.
     for (const finding of findings) {
       if (finding.affected_entities) {
         const entities = new Set<string>();
 
-        // Dynamically scan for IPs or Usernames in the new schema
         for (const [key, value] of Object.entries(finding.affected_entities)) {
-          // Check keys that likely contain attacker identities
           if (
             key.includes("ip") ||
             key.includes("user") ||
@@ -968,30 +840,31 @@ export const insightsService = {
           const existing = attackerMap.get(entity) || {
             request_count: 0,
             threat_count: 0,
-            severities: new Set(),
-            countries: new Set(),
+            severities: new Set<string>(),
           };
-
-          existing.threat_count++; // It's in a finding, so it's a threat
+          existing.threat_count++;
           existing.severities.add(finding.severity || "INFO");
           attackerMap.set(entity, existing);
         }
       }
     }
 
-    // Convert to sorted array and get top 10
-    const attackers = Array.from(attackerMap.entries())
+    // FIX: Filter to valid IPv4 addresses only before building the final array.
+    // This prevents the entire insight from failing Zod validation because of
+    // usernames or hostnames stored in the `ip` field.
+    const attackers: AttackerInfo[] = Array.from(attackerMap.entries())
+      .filter(([identifier]) => IPV4_REGEX.test(identifier))
       .map(([ip, data]) => {
         const severities = Array.from(data.severities);
-        const topSeverity = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"].find(
+        const topSeverity = (["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"].find(
           (s) => severities.includes(s),
-        ) as any;
+        ) || "LOW") as any;
 
         const attacker: AttackerInfo = {
-          ip, // Keeping the field named 'ip' to match the type definition, even if it's a username/entity
+          ip,
           request_count: data.request_count,
           threat_count: data.threat_count,
-          severity: topSeverity || "LOW",
+          severity: topSeverity,
         };
 
         if (data.last_seen) {
@@ -1005,12 +878,14 @@ export const insightsService = {
 
     return {
       attackers,
+      // total_unique_ips reflects all unique identifiers seen (including non-IPs)
+      // to keep the count accurate for display purposes
       total_unique_ips: attackerMap.size,
     };
   },
 
   /**
-   * Generate EVENT_TYPE_DISTRIBUTION from normalized logs
+   * Generate EVENT_TYPE_DISTRIBUTION from normalized logs.
    */
   generateEventTypeDistribution(logs: any[]): any {
     const eventTypeMap = new Map<string, number>();
@@ -1028,21 +903,16 @@ export const insightsService = {
         percentage: Math.round((count / total) * 100 * 100) / 100,
       }))
       .sort((a, b) => b.count - a.count)
-      .slice(0, 15); // Top 15 event types
+      .slice(0, 15);
 
-    return {
-      distribution,
-      total_events: total,
-    };
+    return { distribution, total_events: total };
   },
 
   /**
-   * Generate KPI metrics
+   * Generate KPI metrics.
    */
   generateKPIMetrics(findings: AnalyzerFindingWithLogs[], logs: any[]): any {
-    const criticalCount = findings.filter(
-      (f) => f.severity === "CRITICAL",
-    ).length;
+    const criticalCount = findings.filter((f) => f.severity === "CRITICAL").length;
     const highCount = findings.filter((f) => f.severity === "HIGH").length;
     const totalThreats = findings.length;
     const uniqueIPs = new Set(
@@ -1053,37 +923,18 @@ export const insightsService = {
 
     return {
       metrics: [
-        {
-          label: "Total Threats",
-          value: totalThreats,
-          severity: totalThreats > 0 ? "HIGH" : "INFO",
-        },
-        {
-          label: "Critical Alerts",
-          value: criticalCount,
-          severity: criticalCount > 0 ? "CRITICAL" : "INFO",
-        },
-        {
-          label: "High Priority",
-          value: highCount,
-          severity: highCount > 0 ? "HIGH" : "INFO",
-        },
-        {
-          label: "Unique Attack Sources",
-          value: uniqueIPs,
-          severity: uniqueIPs > 5 ? "HIGH" : "MEDIUM",
-        },
-        {
-          label: "Total Events",
-          value: logs.length,
-        },
+        { label: "Total Threats", value: totalThreats, severity: totalThreats > 0 ? "HIGH" : "INFO" },
+        { label: "Critical Alerts", value: criticalCount, severity: criticalCount > 0 ? "CRITICAL" : "INFO" },
+        { label: "High Priority", value: highCount, severity: highCount > 0 ? "HIGH" : "INFO" },
+        { label: "Unique Attack Sources", value: uniqueIPs, severity: uniqueIPs > 5 ? "HIGH" : "MEDIUM" },
+        { label: "Total Events", value: logs.length },
       ],
     };
   },
 
   /**
-   * Build AI context for LLM insight generation
-   * Returns findings, logs, and timeline data ready for Gemini
+   * Build AI context for LLM insight generation.
+   * Returns findings (now including evidence), logs, and timeline data.
    */
   async buildAIContext(
     jobId: string,
@@ -1100,8 +951,9 @@ export const insightsService = {
       },
     };
   },
+
   /**
-   * Load normalized logs for a job
+   * Load normalized logs for a job.
    */
   async loadNormalizedLogs(jobId: string): Promise<any[]> {
     try {
@@ -1119,18 +971,20 @@ export const insightsService = {
       throw error;
     }
   },
+
   /**
-   * Persist insights to database
+   * Persist insights to database.
+   * Validates each insight immediately before inserting so a bad record
+   * from the LLM cannot block the entire batch.
    */
   async persistInsights(insights: InsightRecord[]): Promise<any> {
     logger.info(`[INSIGHTS SERVICE] Persisting ${insights.length} insights...`);
 
-    const createdInsights = [];
-    const skippedInsights = [];
+    const createdInsights: any[] = [];
+    const skippedInsights: any[] = [];
 
     for (const insight of insights) {
       try {
-        // Validate before insert
         const validation = insightValidators.validateInsightRecord({
           insight_type: insight.insight_type,
           data: insight.data,
@@ -1138,9 +992,7 @@ export const insightsService = {
 
         if (!validation.valid) {
           logger.warn(
-            `[INSIGHTS SERVICE] Skipping invalid insight: ${
-              insight.insight_type
-            } - ${JSON.stringify(validation.errors)}`,
+            `[INSIGHTS SERVICE] Skipping invalid insight: ${insight.insight_type} — ${JSON.stringify(validation.errors)}`,
           );
           skippedInsights.push({
             insight: insight.insight_type,
@@ -1173,9 +1025,9 @@ export const insightsService = {
         createdInsights.push(created);
       } catch (error) {
         logger.error(
-          `[INSIGHTS SERVICE] Error persisting insight ${
-            insight.insight_type
-          }: ${error instanceof Error ? error.message : error}`,
+          `[INSIGHTS SERVICE] Error persisting insight ${insight.insight_type}: ${
+            error instanceof Error ? error.message : error
+          }`,
         );
         skippedInsights.push({
           insight: insight.insight_type,

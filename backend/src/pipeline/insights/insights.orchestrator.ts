@@ -32,8 +32,14 @@ interface InsightsOrchestrationResult {
 
 export const insightsOrchestrator = {
   /**
-   * Orchestrate complete insights generation for a job
-   * Combines deterministic + LLM insights
+   * Orchestrate complete insights generation for a job.
+   * Combines deterministic (rule-based) insights with LLM-generated insights.
+   *
+   * Flow:
+   * 1. Load source data ONCE (findings + logs) — prevents double DB round-trip
+   * 2. Generate deterministic insights from that data
+   * 3. Pass the same findings (with evidence) to the LLM generator
+   * 4. Combine and persist all insights together
    */
   async generateCompleteInsights(
     jobId: string,
@@ -45,40 +51,37 @@ export const insightsOrchestrator = {
         `[INSIGHTS ORCHESTRATOR] Starting complete insights generation for job ${jobId}`,
       );
 
-      // ===== STEP 1: GENERATE DETERMINISTIC INSIGHTS =====
+      // ===== STEP 1: LOAD SOURCE DATA ONCE =====
+      // Load findings (with evidence + detected_at) and normalized logs in
+      // parallel. Both the deterministic generator and LLM generator use this
+      // same data — no second DB call anywhere in this flow.
+      logger.info(`[INSIGHTS ORCHESTRATOR] Step 1: Loading source data...`);
+      const sourceData = await insightsService.loadInsightSourceData(jobId);
+      const { findings, normalizedLogs } = sourceData;
+
       logger.info(
-        `[INSIGHTS ORCHESTRATOR] Step 1: Generating deterministic insights...`,
+        `[INSIGHTS ORCHESTRATOR] Source data loaded: ${findings.length} findings, ${normalizedLogs.length} logs`,
       );
 
-      const sourceData = await insightsService.loadInsightSourceData(jobId);
+      // ===== STEP 2: GENERATE DETERMINISTIC INSIGHTS =====
+      logger.info(
+        `[INSIGHTS ORCHESTRATOR] Step 2: Generating deterministic insights...`,
+      );
+
       const deterministicResult = await insightsService.generateInsightsForJob(
         jobId,
-        sourceData,
+        sourceData, // pass pre-loaded data — no re-fetch
       );
 
       logger.info(
         `[INSIGHTS ORCHESTRATOR] Generated ${deterministicResult.deterministic_insights_generated} deterministic insights`,
       );
 
-      // ===== STEP 2: BUILD AI CONTEXT =====
-      logger.info(`[INSIGHTS ORCHESTRATOR] Step 2: Building AI context...`);
-
-      const { findings, normalizedLogs } = sourceData;
-
+      // Pull the activity timeline out of deterministic results so we can pass
+      // it to the LLM as part of the security context.
       const activityTimeline = deterministicResult.insights.find(
         (i) => i.insight_type === "ACTIVITY_TIMELINE",
       )?.data as any;
-
-      const context = await insightsService.buildAIContext(
-        jobId,
-        findings,
-        normalizedLogs,
-        activityTimeline,
-      );
-
-      logger.info(
-        `[INSIGHTS ORCHESTRATOR] AI context built with ${findings.length} findings and ${normalizedLogs.length} logs`,
-      );
 
       // ===== STEP 3: GENERATE LLM INSIGHTS =====
       logger.info(`[INSIGHTS ORCHESTRATOR] Step 3: Generating LLM insights...`);
@@ -90,7 +93,11 @@ export const insightsOrchestrator = {
         try {
           const llmResult = await llmInsightsGenerator.generateAIInsights({
             jobId,
-            findings: findings,
+            // FIX: `findings` now includes the `evidence` field (loaded in
+            // loadFindingsWithReferences). buildMasterContext reads f.evidence
+            // to inject forensic data into the LLM prompt, which is what drives
+            // specific, evidence-backed insights instead of generic hallucinations.
+            findings,
             timelineData: activityTimeline || {
               points: [],
               total_events: 0,
@@ -135,7 +142,7 @@ export const insightsOrchestrator = {
         }
       } else {
         logger.warn(
-          `[INSIGHTS ORCHESTRATOR] LLM not available - skipping LLM insight generation`,
+          `[INSIGHTS ORCHESTRATOR] LLM not available — skipping LLM insight generation`,
         );
         failedInsights.push({
           type: "LLM_AVAILABILITY",
@@ -143,23 +150,21 @@ export const insightsOrchestrator = {
         });
       }
 
-      // ===== STEP 4: COMBINE & PERSIST INSIGHTS =====
+      // ===== STEP 4: COMBINE & PERSIST =====
       logger.info(`[INSIGHTS ORCHESTRATOR] Step 4: Persisting all insights...`);
 
       const allInsights = [...deterministicResult.insights, ...llmInsights];
-
-      const persistenceResult =
-        await insightsService.persistInsights(allInsights);
+      const persistenceResult = await insightsService.persistInsights(allInsights);
 
       logger.info(
-        `[INSIGHTS ORCHESTRATOR] Persisted ${persistenceResult.total_persisted} insights`,
+        `[INSIGHTS ORCHESTRATOR] Persisted ${persistenceResult.total_persisted} insights (${persistenceResult.total_skipped} skipped)`,
       );
 
-      // ===== STEP 5: BUILD FINAL RESULT =====
+      // ===== STEP 5: BUILD RESULT =====
       const executionTime = Date.now() - startTime;
 
       logger.info(
-        `[INSIGHTS ORCHESTRATOR] Complete insights generation finished in ${executionTime}ms`,
+        `[INSIGHTS ORCHESTRATOR] Complete in ${executionTime}ms — ${allInsights.length} total insights`,
       );
 
       return {
@@ -170,7 +175,7 @@ export const insightsOrchestrator = {
           ...failedInsights,
           ...deterministicResult.validation_errors,
         ],
-        total_insights: allInsights.length,
+        total_insights: persistenceResult.total_persisted,
         executionTimeMs: executionTime,
       };
     } catch (error) {

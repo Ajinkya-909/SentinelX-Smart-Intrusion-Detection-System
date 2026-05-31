@@ -32,6 +32,7 @@ export default function JobResultDashboard() {
       try {
         setLoading(true);
         const data = await getJobInsights(id, 50, 0);
+        console.log("Fetched insights:", data);
         setInsights(data.insights || []);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load report data");
