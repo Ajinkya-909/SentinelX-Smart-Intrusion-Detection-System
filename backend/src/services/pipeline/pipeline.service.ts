@@ -1,6 +1,6 @@
 import { jobService } from "../jobs/job.service";
 import { executeOrchestrator } from "@/pipeline/orchestrator-simple";
-import { JobStatusEnum, JobStageEnum } from "../../types/db.types";
+import { JobStatusEnum } from "../../types/db.types";
 import { ApiError } from "../../utils/api-error";
 
 export const pipelineService = {
@@ -19,13 +19,6 @@ export const pipelineService = {
       }
 
       await executeOrchestrator(jobId, job.file_path);
-
-      await jobService.updateJobStage(
-        jobId,
-        JobStageEnum.INSIGHTS_GENERATED,
-        100,
-      );
-      await jobService.markJobCompleted(jobId);
     } catch (error) {
       try {
         const errorMessage =

@@ -85,7 +85,9 @@ export const executeOrchestrator = async (
 
           // Type detection on first batch to establish a baseline
           if (batchCount === 1) {
-            console.log(`[ORCHESTRATOR] 🔍 Initial Type detection (first batch)...`);
+            console.log(
+              `[ORCHESTRATOR] 🔍 Initial Type detection (first batch)...`,
+            );
             detectionResult = await typeDetectorService.detect(batch.rawLines);
             await typeDetectorService.updateDetectionMetadata(
               jobId,
@@ -106,8 +108,10 @@ export const executeOrchestrator = async (
           let currentParserType = detectionResult.detectedType;
 
           while (retryCount <= MAX_RETRIES) {
-            console.log(`[ORCHESTRATOR] 📊 Parsing batch #${batchCount} using ${currentParserType} (Attempt ${retryCount + 1})...`);
-            
+            console.log(
+              `[ORCHESTRATOR] 📊 Parsing batch #${batchCount} using ${currentParserType} (Attempt ${retryCount + 1})...`,
+            );
+
             // Expected to return { parsedLogs, failedLines, successRate, detectedTypeUsed }
             parseResult = await parserService.parseBatch(
               batch.rawLines,
@@ -115,15 +119,23 @@ export const executeOrchestrator = async (
             );
 
             // If success is high enough, or we are already at the GENERIC fallback, break the loop
-            if (parseResult.successRate >= MIN_SUCCESS_THRESHOLD || currentParserType === "GENERIC") {
-              break; 
+            if (
+              parseResult.successRate >= MIN_SUCCESS_THRESHOLD ||
+              currentParserType === "GENERIC"
+            ) {
+              break;
             }
 
-            console.warn(`[ORCHESTRATOR] ⚠️ Parser ${currentParserType} failed threshold (${(parseResult.successRate * 100).toFixed(1)}%). Re-evaluating...`);
+            console.warn(
+              `[ORCHESTRATOR] ⚠️ Parser ${currentParserType} failed threshold (${(parseResult.successRate * 100).toFixed(1)}%). Re-evaluating...`,
+            );
 
             // Dynamically re-detect on THIS specific failing batch, explicitly excluding the parser that just failed!
-            const newDetection = await typeDetectorService.detect(batch.rawLines, { exclude: [currentParserType] });
-            
+            const newDetection = await typeDetectorService.detect(
+              batch.rawLines,
+              { exclude: [currentParserType] },
+            );
+
             // If the detector just suggests the exact same failing parser, force GENERIC to break the loop
             if (newDetection.detectedType === currentParserType) {
               currentParserType = "GENERIC";
@@ -132,22 +144,42 @@ export const executeOrchestrator = async (
             }
 
             // Keep detectionResult in sync so the Normalizer maps fields correctly later
-            detectionResult = newDetection; 
+            detectionResult = newDetection;
             retryCount++;
 
             // Update DB metadata so the NEXT batch inherits this new, better parser
-            await typeDetectorService.updateDetectionMetadata(jobId, detectionResult);
+            await typeDetectorService.updateDetectionMetadata(
+              jobId,
+              detectionResult,
+            );
           }
 
           // If we exhausted retries and it still failed the threshold, force GENERIC as a last resort
-          if (parseResult.successRate < MIN_SUCCESS_THRESHOLD && currentParserType !== "GENERIC") {
-            console.warn(`[ORCHESTRATOR] ⚠️ Exhausted retries for batch #${batchCount}. Forcing GENERIC fallback.`);
+          if (
+            parseResult.successRate < MIN_SUCCESS_THRESHOLD &&
+            currentParserType !== "GENERIC"
+          ) {
+            console.warn(
+              `[ORCHESTRATOR] ⚠️ Exhausted retries for batch #${batchCount}. Forcing GENERIC fallback.`,
+            );
             currentParserType = "GENERIC";
-            parseResult = await parserService.parseBatch(batch.rawLines, "GENERIC");
-            
+            parseResult = await parserService.parseBatch(
+              batch.rawLines,
+              "GENERIC",
+            );
+
             // Update metadata to reflect the forced fallback
-            detectionResult = { detectedType: "GENERIC", confidence: 1, parser: "genericParser", encoding: "utf8", patterns: { matched: [], analysis: {} }};
-            await typeDetectorService.updateDetectionMetadata(jobId, detectionResult);
+            detectionResult = {
+              detectedType: "GENERIC",
+              confidence: 1,
+              parser: "genericParser",
+              encoding: "utf8",
+              patterns: { matched: [], analysis: {} },
+            };
+            await typeDetectorService.updateDetectionMetadata(
+              jobId,
+              detectionResult,
+            );
           }
           // ---------------------------------------------------------
           // ADAPTIVE PARSING LOOP END
@@ -158,7 +190,7 @@ export const executeOrchestrator = async (
           const normalizationResult = await normalizerService.normalize(
             jobId,
             parseResult.parsedLogs, // Use the logs extracted from the adaptive loop
-            detectionResult,        // Pass the final detection result so field mapping aligns
+            detectionResult, // Pass the final detection result so field mapping aligns
           );
 
           if (normalizationResult.success) {
@@ -263,6 +295,7 @@ export const executeOrchestrator = async (
           JobStageEnum.INSIGHTS_GENERATED,
           100,
         );
+        await jobService.markJobCompleted(jobId);
         console.log(
           `[ORCHESTRATOR] ✅ CHECKPOINT 4 COMPLETE: Insights generated\n`,
         );
@@ -295,7 +328,10 @@ export const executeOrchestrator = async (
       };
     }
   } catch (error) {
-    console.error(`\n[ORCHESTRATOR] ❌ Pipeline failed for job ${jobId}:`, error);
+    console.error(
+      `\n[ORCHESTRATOR] ❌ Pipeline failed for job ${jobId}:`,
+      error,
+    );
     await jobService.updateJobStatus(jobId, JobStatusEnum.FAILED);
 
     throw error;

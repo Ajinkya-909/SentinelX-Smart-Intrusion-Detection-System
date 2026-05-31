@@ -50,8 +50,11 @@ export const insightsOrchestrator = {
         `[INSIGHTS ORCHESTRATOR] Step 1: Generating deterministic insights...`,
       );
 
-      const deterministicResult =
-        await insightsService.generateInsightsForJob(jobId);
+      const sourceData = await insightsService.loadInsightSourceData(jobId);
+      const deterministicResult = await insightsService.generateInsightsForJob(
+        jobId,
+        sourceData,
+      );
 
       logger.info(
         `[INSIGHTS ORCHESTRATOR] Generated ${deterministicResult.deterministic_insights_generated} deterministic insights`,
@@ -60,8 +63,7 @@ export const insightsOrchestrator = {
       // ===== STEP 2: BUILD AI CONTEXT =====
       logger.info(`[INSIGHTS ORCHESTRATOR] Step 2: Building AI context...`);
 
-      const findings = await insightsService.loadFindingsWithReferences(jobId);
-      const normalizedLogs = await insightsService.loadNormalizedLogs(jobId);
+      const { findings, normalizedLogs } = sourceData;
 
       const activityTimeline = deterministicResult.insights.find(
         (i) => i.insight_type === "ACTIVITY_TIMELINE",

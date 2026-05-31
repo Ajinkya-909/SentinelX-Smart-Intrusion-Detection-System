@@ -59,6 +59,11 @@ interface InsightGenerationContext {
   };
 }
 
+interface InsightSourceData {
+  findings: AnalyzerFindingWithLogs[];
+  normalizedLogs: any[];
+}
+
 interface InsightGenerationResult {
   job_id: string;
   insights: InsightRecord[];
@@ -72,11 +77,24 @@ interface InsightGenerationResult {
 
 export const insightsService = {
   /**
+   * Load findings and normalized logs once for both deterministic and LLM insight generation.
+   */
+  async loadInsightSourceData(jobId: string): Promise<InsightSourceData> {
+    const [findings, normalizedLogs] = await Promise.all([
+      this.loadFindingsWithReferences(jobId),
+      this.loadNormalizedLogs(jobId),
+    ]);
+
+    return { findings, normalizedLogs };
+  },
+
+  /**
    * Generate all insights for a job
    * Entry point for insights generation stage
    */
   async generateInsightsForJob(
     jobId: string,
+    preloadedData?: InsightSourceData,
   ): Promise<InsightGenerationResult> {
     const startTime = Date.now();
 
@@ -85,10 +103,12 @@ export const insightsService = {
         `[INSIGHTS SERVICE] Starting insights generation for job ${jobId}`,
       );
 
+      const sourceData =
+        preloadedData || (await this.loadInsightSourceData(jobId));
+      const { findings, normalizedLogs } = sourceData;
+
       // ===== STEP 1: LOAD ANALYZER FINDINGS =====
       logger.info(`[INSIGHTS SERVICE] Loading analyzer findings...`);
-
-      const findings = await this.loadFindingsWithReferences(jobId);
 
       if (findings.length === 0) {
         logger.warn(
@@ -110,11 +130,6 @@ export const insightsService = {
 
       // ===== STEP 2: LOAD NORMALIZED LOGS =====
       logger.info(`[INSIGHTS SERVICE] Loading normalized logs...`);
-
-      const normalizedLogs = await prisma.normalized_logs.findMany({
-        where: { job_id: jobId },
-        orderBy: { timestamp: "asc" },
-      });
 
       if (normalizedLogs.length === 0) {
         logger.warn(
