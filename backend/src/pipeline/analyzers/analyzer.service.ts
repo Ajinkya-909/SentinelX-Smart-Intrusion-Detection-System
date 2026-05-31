@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import logger from "../../config/logger";
 import pipelineRepository from "../../repositories/pipeline.repository";
 import { jobRepository } from "../../repositories";
@@ -220,12 +221,27 @@ export const analyzerService = {
       (ref: any) => ref !== undefined && ref !== null,
     );
 
-    // FIX 2: Generate fingerprint for deduplication that includes log references.
-    // This stops ML anomalies (which often lack specific entities) from sharing the exact same hash and overwriting each other.
-    const entityHash = JSON.stringify(finding.affected_entities || {}).substring(0, 50);
-    const logRefHash = JSON.stringify(logReferences).substring(0, 100);
-    
-    const fingerprintString = `${finding.analyzer}_${finding.finding_type}_${entityHash}_${logRefHash}`;
+    // FIX 2 (CORRECTED): Build fingerprint from full, untruncated content.
+    //
+    // Previous bug: .substring(0, 50) and .substring(0, 100) were applied BEFORE
+    // hashing. For UUID-based log IDs, the first 100 chars of two different reference
+    // arrays are often identical, causing the deduplication map to collapse genuinely
+    // different findings into one and silently drop the second.
+    //
+    // The anchor for identity is:
+    //   - analyzer + finding_type  → what kind of finding
+    //   - affected_entities (full) → who/what it targets
+    //   - first 10 log IDs         → which event cluster triggered it (bounded but complete)
+    //
+    // Using the first 10 log references is intentional: findings from two overlapping
+    // windows that detected the same attack will share the same starting logs and
+    // therefore produce the same fingerprint (correct deduplication). Findings for
+    // different attacks — even of the same type on the same entity — will differ in
+    // their earliest logs and produce different fingerprints (correct separation).
+    const entityStr  = JSON.stringify(finding.affected_entities || {});
+    const logRefStr  = JSON.stringify(logReferences.slice(0, 10));
+
+    const fingerprintString = `${finding.analyzer}_${finding.finding_type}_${entityStr}_${logRefStr}`;
     const fingerprint = this.hashFingerprint(fingerprintString);
 
     return {
@@ -248,18 +264,20 @@ export const analyzerService = {
   },
 
   /**
-   * Simple hash function for fingerprint
-   * @param str - String to hash
-   * @returns Hash string
+   * Cryptographic fingerprint using SHA-256 (truncated to 16 hex chars / 64 bits).
+   *
+   * Previous bug: the hand-rolled djb2-style hash was 32-bit (≈4.3B values).
+   * With tens of thousands of findings across many sliding windows, the birthday
+   * paradox made hash collisions statistically likely — two completely different
+   * findings would hash to the same value and one would be silently dropped by the
+   * deduplication map before it ever reached the database.
+   *
+   * SHA-256 truncated to 64 bits gives a collision probability of effectively zero
+   * at any realistic finding volume (you would need ~4 billion findings before the
+   * probability exceeds 0.01%).
    */
   hashFingerprint(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash;
-    }
-    return Math.abs(hash).toString(16);
+    return createHash("sha256").update(str).digest("hex").substring(0, 16);
   },
 
   /**
@@ -315,4 +333,4 @@ export const analyzerService = {
   },
 };
 
-export default analyzerService;
+export default analyzerService; 
