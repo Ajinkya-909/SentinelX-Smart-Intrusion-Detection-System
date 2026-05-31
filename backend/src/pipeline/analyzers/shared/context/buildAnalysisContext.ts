@@ -281,7 +281,7 @@ const buildSessionGroups = (logs: NormalizedLog[]): SessionGroup[] => {
         currentSession.push(log);
       }
 
-      lastIp = log.ip_address;
+      lastIp = log.ip_address || "";
       lastSessionId = currentSessionId || lastSessionId;
       lastTimestamp = new Date(log.timestamp);
     }
