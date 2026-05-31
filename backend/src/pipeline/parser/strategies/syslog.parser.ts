@@ -29,8 +29,8 @@ export class SyslogParser extends BaseParser {
 
     const remainingAfterTime = line.substring(messageStartIdx).trim();
 
-    // 2. Extract Hostname, Service, PID (e.g., "ubuntu sshd[1234]: " OR just "sshd[1234]: ")
-    const headerMatch = remainingAfterTime.match(/^([a-zA-Z0-9_.-]+)?\s*([a-zA-Z0-9_.-]+)(?:\[(\d+)\])?:\s*(.*)/);
+    // 2. Extract Hostname, Service, PID
+    const headerMatch = remainingAfterTime.match(/^([a-zA-Z0-9_.-]+)?\s*([a-zA-Z0-9_.()/-]+)(?:\[(\d+)\])?:\s*(.*)/);
     
     if (headerMatch) {
       if (headerMatch[1]) log.metadata.hostname = headerMatch[1];
@@ -43,34 +43,61 @@ export class SyslogParser extends BaseParser {
         log.message = remainingAfterTime;
     }
 
-    // 3. Infer Log Level and attempt to scrape IP addresses dynamically
+    // 3. Infer Log Level
     log.logLevel = this.inferSyslogLevel(log.message);
     
-    // Attempt to scrape an IP from the message body (useful for auth logs)
-    const ipMatch = log.message.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/);
-    if (ipMatch) {
-      log.sourceIp = ipMatch[0];
+    // 4. Scrape IP Address dynamically (Enterprise: IPv4 and IPv6)
+    const ipv4Match = log.message.match(/\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/);
+    if (ipv4Match) {
+      log.sourceIp = ipv4Match[0];
+    } else {
+      // Basic IPv6 matching (e.g., 2001:0db8:85a3:0000:0000:8a2e:0370:7334)
+      const ipv6Match = log.message.match(/\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b/);
+      if (ipv6Match) log.sourceIp = ipv6Match[0];
+    }
+
+    // 5. Scrape Username dynamically (Expanded for VPNs, DBs, and generic auth)
+    const userMatch = log.message.match(/\b(?:user=|for (?:invalid user )?|user\s+|account\s+)([a-zA-Z0-9_.-]+)\b/i);
+    if (userMatch && userMatch[1]) {
+      log.user = userMatch[1];
+    }
+
+    // 6. Scrape Network Port (Crucial for firewall and IDS syslogs)
+    const portMatch = log.message.match(/\bport\s+(\d{1,5})\b/i);
+    if (portMatch && portMatch[1]) {
+      log.metadata.port = parseInt(portMatch[1], 10);
+    }
+
+    // 7. Scrape MAC Address (Crucial for DHCP and Wireless controller syslogs)
+    const macMatch = log.message.match(/\b(?:[0-9A-Fa-f]{2}[:-]){5}(?:[0-9A-Fa-f]{2})\b/);
+    if (macMatch) {
+      log.metadata.macAddress = macMatch[0];
+    }
+
+    // 8. Pre-Classify Explicit Events (Gives Normalizer a massive head start)
+    const actionMatch = log.message.match(/\b(authentication failure|accepted password|accepted publickey|session opened|session closed|disconnected|connection closed|failed password|invalid user|timeout|started|stopped|restart)\b/i);
+    if (actionMatch && actionMatch[1]) {
+      // Converts "authentication failure" to "AUTHENTICATION_FAILURE" automatically
+      log.metadata.event_type = actionMatch[1].toUpperCase().replace(/\s+/g, '_');
     }
 
     return log;
   }
 
-    private parseSyslogTimestamp(ts?: string): Date {
-      // RFC3164 omits the year, so we must safely infer it
-      if (!ts) return new Date();
-      const currentYear = new Date().getFullYear();
-      const date = new Date(`${ts} ${currentYear} UTC`);
-     
-      // Handle year wrap-around logic (e.g., processing December logs in January)
-      if (date > new Date()) {
-        date.setFullYear(currentYear - 1);
-      }
-      return date;
+  private parseSyslogTimestamp(ts?: string): Date {
+    if (!ts) return new Date();
+    const currentYear = new Date().getFullYear();
+    const date = new Date(`${ts} ${currentYear} UTC`);
+   
+    if (date > new Date()) {
+      date.setFullYear(currentYear - 1);
     }
+    return date;
+  }
 
   private inferSyslogLevel(message: string): string {
      const lower = message.toLowerCase();
-     if (lower.includes("error") || lower.includes("fail") || lower.includes("fatal") || lower.includes("out of memory") || lower.includes("invalid user")) return "ERROR";
+     if (lower.includes("error") || lower.includes("fail") || lower.includes("fatal") || lower.includes("out of memory") || lower.includes("invalid user") || lower.includes("denied")) return "ERROR";
      if (lower.includes("warn")) return "WARN";
      if (lower.includes("debug") || lower.includes("trace")) return "DEBUG";
      return "INFO";
