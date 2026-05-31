@@ -39,29 +39,43 @@ export const buildAnalysisContext = (
   };
 
   // ===== 1. TIMELINES & 3. MAPPINGS =====
+  // FIX: "unknown" entities are excluded from entityTimelines and mappings.
+  // Without this guard, logs missing IP or username all accumulate under
+  // "ip:unknown" / "user:unknown", which can become the largest entries in
+  // the map and skew every detector that iterates entityTimelines by count.
+  // (requestSpikeDetector already guarded against this locally — this makes
+  // it a global invariant so every detector gets clean data automatically.)
   for (const log of logs) {
-    const userId = log.metadata?.actor?.username || "unknown"; // FIXED
+    const userId = log.metadata?.actor?.username || "unknown";
     const ip = log.ip_address || "unknown";
 
     const userKey = `user:${userId}`;
     const ipKey = `ip:${ip}`;
 
-    if (!context.entityTimelines.has(userKey))
-      context.entityTimelines.set(userKey, []);
-    context.entityTimelines.get(userKey)!.push(log);
+    // Only add known users to entity timelines
+    if (userId !== "unknown") {
+      if (!context.entityTimelines.has(userKey))
+        context.entityTimelines.set(userKey, []);
+      context.entityTimelines.get(userKey)!.push(log);
+    }
 
-    if (!context.entityTimelines.has(ipKey))
-      context.entityTimelines.set(ipKey, []);
-    context.entityTimelines.get(ipKey)!.push(log);
+    // Only add known IPs to entity timelines and mappings
+    if (ip !== "unknown") {
+      if (!context.entityTimelines.has(ipKey))
+        context.entityTimelines.set(ipKey, []);
+      context.entityTimelines.get(ipKey)!.push(log);
 
-    // Mappings
-    if (!context.userIpMappings.has(userId))
-      context.userIpMappings.set(userId, new Set());
-    context.userIpMappings.get(userId)!.add(ip);
+      if (!context.ipUserMappings.has(ip))
+        context.ipUserMappings.set(ip, new Set());
+      context.ipUserMappings.get(ip)!.add(userId);
+    }
 
-    if (!context.ipUserMappings.has(ip))
-      context.ipUserMappings.set(ip, new Set());
-    context.ipUserMappings.get(ip)!.add(userId);
+    // userIpMappings: only track when both sides are known
+    if (userId !== "unknown" && ip !== "unknown") {
+      if (!context.userIpMappings.has(userId))
+        context.userIpMappings.set(userId, new Set());
+      context.userIpMappings.get(userId)!.add(ip);
+    }
   }
 
   // ===== 2. SORT ALL TIMELINES =====
@@ -83,19 +97,68 @@ export const buildAnalysisContext = (
     context.timeBuckets.get(bucketKey)!.push(log);
   }
 
+  // ===== 4b. COMPUTE STATISTICS FROM TIME BUCKETS =====
+  // FIX: statistics fields were initialized to 0 and never populated.
+  // requestsPerMinute / errorsPerMinute are straightforward averages over
+  // the 1-minute buckets built above. rollingWindows is populated here so
+  // any detector that reads it gets real data instead of an empty Map.
+  if (context.timeBuckets.size > 0) {
+    const bucketCounts = Array.from(context.timeBuckets.values()).map(b => b.length);
+    const total = bucketCounts.reduce((a, b) => a + b, 0);
+    context.statistics.requestsPerMinute = total / bucketCounts.length;
+
+    const errorCounts = Array.from(context.timeBuckets.values()).map(
+      (b) => b.filter((l) => l.severity === "CRITICAL" || l.severity === "HIGH" ||
+        (l.metadata?.request?.statusCode ?? 0) >= 400).length
+    );
+    const totalErrors = errorCounts.reduce((a, b) => a + b, 0);
+    context.statistics.errorsPerMinute = totalErrors / errorCounts.length;
+
+    // Populate rollingWindows: Map<string, number[]> where each key is a
+    // bucket timestamp and the value is an array of per-minute counts for
+    // a sliding window ending at that bucket. Detectors can read the last
+    // N entries to compute rolling averages or spike thresholds.
+    const bucketKeys = Array.from(context.timeBuckets.keys()).sort();
+    for (let i = 0; i < bucketKeys.length; i++) {
+      const key = bucketKeys[i]!;
+      // Store the running series of counts up to and including this bucket,
+      // capped at the last 60 entries (~1 hour of 1-minute buckets) to keep
+      // memory bounded on long log files.
+      const windowSlice = bucketKeys
+        .slice(Math.max(0, i - 59), i + 1)
+        .map((k) => context.timeBuckets.get(k)!.length);
+      context.statistics.rollingWindows.set(key, windowSlice);
+    }
+  }
+
   // ===== 5. CLASSIFY AUTH EVENTS (Context-Aware) =====
+  // FIX: Broadened from just "LOGIN" to cover all normalized syslog auth event
+  // types (AUTH_SUCCESS, AUTH_FAILURE, SESSION_START, SESSION_END, LOGON, etc.).
+  // The old check only matched HTTP-style login events. Syslog "Failed password"
+  // and "Accepted publickey" normalize to AUTH_FAILURE / AUTH_SUCCESS — they
+  // never matched "LOGIN", so authEvents was always empty for Linux auth logs,
+  // making brute force, account takeover, and impossible velocity detectors
+  // fire zero findings on syslog sources.
   for (const log of logs) {
-    // Rely explicitly on the new normalizer's security metadata
-    if (
+    const et = log.event_type;
+    const isAuthEvent =
       log.metadata?.security !== undefined ||
-      log.event_type.includes("LOGIN")
-    ) {
-      context.authEvents.push(log);
-      if (log.metadata?.security?.authSuccess === true) {
-        context.successfulAuthEvents.push(log);
-      } else {
-        context.failedAuthEvents.push(log);
-      }
+      et.includes("LOGIN")   ||
+      et.includes("AUTH")    ||
+      et.includes("SESSION") ||
+      et.includes("LOGON")   ||
+      et.includes("LOGOFF")  ||
+      et === "PERMISSION_DENIED" ||
+      et === "SUDO";
+
+    if (!isAuthEvent) continue;
+
+    context.authEvents.push(log);
+
+    if (log.metadata?.security?.authSuccess === true) {
+      context.successfulAuthEvents.push(log);
+    } else {
+      context.failedAuthEvents.push(log);
     }
   }
 
@@ -186,12 +249,28 @@ const buildSessionGroups = (logs: NormalizedLog[]): SessionGroup[] => {
         (1000 * 60);
       const currentSessionId = log.metadata?.actor?.sessionId || "";
 
-      // Break session IF explicit Session ID changed, OR IP changed, OR 30 min gap
+      // FIX: Previously, any IP change immediately created a new session,
+      // which breaks mobile users, VPN users, and cloud NAT environments that
+      // legitimately change IPs mid-session. This caused sessionHijacking and
+      // longSession detectors to undercount session length and overcount session
+      // count dramatically.
+      //
+      // New logic: explicit sessionId change is the primary splitter (most reliable).
+      // IP change alone only splits when there's also a meaningful time gap (5+ min),
+      // because a genuine IP change mid-session (not a session boundary) typically
+      // has no gap at all — the next request comes in immediately from the new IP.
+      // The 30-minute idle timeout remains as the catch-all.
+      const hasExplicitSessionIds = currentSessionId !== "" && lastSessionId !== "";
+      const sessionIdChanged = hasExplicitSessionIds && currentSessionId !== lastSessionId;
+
+      const ipChangedWithGap =
+        log.ip_address !== lastIp &&
+        lastIp !== "" &&
+        timeDiffMinutes > 5;
+
       const isNewSession =
-        (currentSessionId &&
-          currentSessionId !== lastSessionId &&
-          lastSessionId !== "") ||
-        (log.ip_address !== lastIp && lastIp !== "") ||
+        sessionIdChanged ||
+        ipChangedWithGap ||
         timeDiffMinutes > 30;
 
       if (isNewSession) {

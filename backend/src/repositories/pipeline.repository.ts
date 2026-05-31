@@ -245,12 +245,13 @@ const pipelineRepository = {
   async getNormalizedLogsWindow(jobId: string, take: number, skip: number) {
     return await prisma.normalized_logs.findMany({
       where: { job_id: jobId },
-      orderBy: { timestamp: "asc" }, // Crucial: Ensures temporal order is strictly maintained
+      // Deterministic ordering prevents overlap windows from returning logs
+      // in different sequences when timestamps are identical.
+      orderBy: [{ timestamp: "asc" }, { id: "asc" }],
       take: take,
       skip: skip,
     });
-  }
-
+  },
 };
 
 export default pipelineRepository;

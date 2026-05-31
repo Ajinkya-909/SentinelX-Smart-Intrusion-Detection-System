@@ -142,8 +142,36 @@ export class KeyValueParser extends BaseParser {
         (parsedLog as any).eventType = eventType;
       }
 
-      // Store all extracted fields as-is for semantic mapping in normalizer
-      parsedLog.keyValueFields = extractedFields;
+      // FIX: Removed `parsedLog.keyValueFields = extractedFields`.
+      //
+      // Previously, the entire raw extractedFields object was stored on the
+      // parsed log. The normalizer's extractNestedFields() then picked it up
+      // (it was not in the exclusion list) and wrote the whole thing into
+      // parserMetadata.keyValueFields — meaning every KV field was persisted
+      // twice: once via the semantic promotions above (sourceIp, user, etc.)
+      // and once as a raw blob. This doubled storage for every KV log and
+      // made normalizer output harder to read and query.
+      //
+      // The semantic fields already promoted above (sourceIp, user, eventType,
+      // severity) are sufficient for all detectors. Any remaining fields the
+      // normalizer needs are accessible through the individual promotions below.
+      //
+      // Promote remaining extractedFields individually so extractField()'s
+      // dot-notation traversal and the jsonMapping aliases can reach them,
+      // without dumping an opaque blob into parserMetadata.
+      for (const [key, value] of Object.entries(extractedFields)) {
+        // Skip fields already promoted to named ParsedLog properties above
+        if (
+          key === "timestamp" ||
+          (sourceIp && /(^ip$|ip_address|source_ip|client_ip|remote_addr|remote_ip|ipv4|ipv6|addr)/i.test(key)) ||
+          (user && /(^user$|username|user_id|uid|actor|account|principal)/i.test(key)) ||
+          (severity && /(severity|severity_level|level|priority|urgency|impact)/i.test(key))
+        ) {
+          continue;
+        }
+        // Promote to top-level so extractField() can find them directly
+        (parsedLog as any)[key] = value;
+      }
 
       return parsedLog;
     } catch (error) {

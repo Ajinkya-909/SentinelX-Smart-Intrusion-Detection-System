@@ -64,9 +64,21 @@ export class TypeDetectorService {
     // Dynamic Expanding Sample Size Loop
     for (const size of sampleSizesToTry) {
       const sampleSize = Math.min(size, rawLines.length);
-      const sampleLines = rawLines.slice(0, sampleSize);
 
-      logger.info(`[TYPE_DETECTOR] Sampling ${sampleSize} lines...`);
+      // FIX: Sample from three positions (start, middle, end) instead of always
+      // slicing from the beginning of the file.
+      //
+      // Log files frequently have format headers, rotation markers, or comment
+      // lines at the top that don't match the actual format of the body content.
+      // Always sampling rawLines.slice(0, N) means the detector sees these
+      // atypical lines disproportionately, producing artificially low confidence
+      // for the correct format and sometimes picking the wrong parser entirely.
+      //
+      // Distributing the sample across three positions gives a representative
+      // view of the file's actual content regardless of header noise.
+      const sampleLines = this.getDistributedSample(rawLines, sampleSize);
+
+      logger.info(`[TYPE_DETECTOR] Sampling ${sampleSize} lines (distributed: start/middle/end)...`);
 
       // 1. Analyze and group results by tier, immediately filtering out excluded types
       // By calling analyze() first, we access the valid public `type` property on the result object.
@@ -85,17 +97,26 @@ export class TypeDetectorService {
       // ============================================================================
       // PHASE 2: THE PENALTY ENGINE
       // ============================================================================
-      // Check if any strict format shows a meaningful "pulse" (> 20%)
-      const hasStrongSignal = 
-        tier1Results.some(r => r.confidence > 0.20) ||
-        tier2Results.some(r => r.confidence > 0.20);
+      // FIX: Raised threshold from 0.20 → 0.40 before applying the Tier 3 penalty.
+      //
+      // At 0.20, any Tier 1/2 detector hitting just 21% confidence (e.g. a CloudTrail
+      // export where 25% of lines are JSON event records and 75% are structured text
+      // headers) triggered a 60% penalty on ALL Tier 3 fallbacks — pushing jsonDetector
+      // below genericDetector even when JSON was clearly the right answer.
+      //
+      // At 0.40, the signal must represent a genuine majority before we penalise
+      // the structural fallbacks. A detector at 41%+ is meaningfully dominating the
+      // sample; at 21% it's a weak hint that shouldn't override structural evidence.
+      const hasStrongSignal =
+        tier1Results.some(r => r.confidence > 0.40) ||
+        tier2Results.some(r => r.confidence > 0.40);
 
       if (hasStrongSignal) {
         for (const fallbackResult of tier3Results) {
           // Apply a 60% penalty to the fallback score to prevent hijacking
           fallbackResult.confidence *= 0.4;
         }
-        logger.debug(`[TYPE_DETECTOR] Strong strict signal detected. Applied 60% penalty to Tier 3 fallbacks.`);
+        logger.debug(`[TYPE_DETECTOR] Strong strict signal detected (>40%). Applied 60% penalty to Tier 3 fallbacks.`);
       }
 
       // Combine all valid results after penalties have been applied
@@ -152,6 +173,29 @@ export class TypeDetectorService {
     );
 
     return detectionResult;
+  }
+
+  /**
+   * Returns a representative sample drawn from three positions in the file:
+   * the start, the middle, and the end — each getting roughly one third of
+   * the requested sample size.
+   *
+   * This prevents log file headers, rotation markers, or comment blocks at
+   * the top of a file from dominating the detection sample and producing
+   * artificially low confidence or wrong type selection.
+   */
+  private getDistributedSample(lines: string[], size: number): string[] {
+    if (lines.length <= size) return lines;
+
+    const third = Math.floor(size / 3);
+    const remainder = size - third * 2; // absorb rounding into the middle slice
+    const mid = Math.floor(lines.length / 2);
+
+    return [
+      ...lines.slice(0, third),                        // start
+      ...lines.slice(mid, mid + remainder),            // middle
+      ...lines.slice(lines.length - third),            // end
+    ];
   }
 
   // --- EXISTING DATABASE METHODS (Untouched) ---

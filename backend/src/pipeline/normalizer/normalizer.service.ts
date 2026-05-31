@@ -62,7 +62,20 @@ function normalizeTimestamp(log: ParsedLog, mapping: FieldMapping): Date {
 
 function normalizeIP(ip: string): string | undefined {
   if (!ip || typeof ip !== "string") return undefined;
-  const trimmed = ip.trim();
+  let trimmed = ip.trim();
+
+  // Strip port suffix before validation: "192.168.1.1:8080" → "192.168.1.1"
+  // Also handles IPv6 with port: "[::1]:8080" → "::1"
+  if (trimmed.startsWith("[")) {
+    // IPv6 bracket notation: [::1]:port
+    const bracketEnd = trimmed.indexOf("]");
+    if (bracketEnd !== -1) trimmed = trimmed.slice(1, bracketEnd);
+  } else if (trimmed.includes(":")) {
+    // Only strip if exactly one colon (IPv4 with port). Multiple colons = bare IPv6.
+    const colonCount = (trimmed.match(/:/g) || []).length;
+    if (colonCount === 1) trimmed = trimmed.split(":")[0]!;
+  }
+
   const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
   if (ipv4Regex.test(trimmed)) return trimmed;
   const ipv6Regex = /^([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}$/i;
@@ -137,14 +150,52 @@ function buildRequestMetadata(log: ParsedLog, mapping: FieldMapping): RequestMet
 
 function buildSecurityMetadata(log: ParsedLog, mapping: FieldMapping, eventType: string): SecurityMetadata | undefined {
   const statusCode = extractField(log, mapping.statusCode);
-  if (eventType.includes("LOGIN") || statusCode === 401 || statusCode === 403) {
-    return {
-      authenticated: statusCode !== 401,
-      authSuccess: statusCode && String(statusCode).startsWith("2"),
-      failureReason: statusCode === 401 ? "invalid_credentials" : statusCode === 403 ? "access_denied" : undefined,
-    };
+
+  // Broad auth-event check: covers HTTP status codes, normalized syslog event types,
+  // and CloudTrail/Windows auth events. The previous version only matched "LOGIN"
+  // and HTTP 401/403, which meant syslog "Failed password" / "Accepted publickey"
+  // events (normalized to AUTH_FAILURE / AUTH_SUCCESS / SESSION_START / SESSION_END)
+  // never got security metadata, leaving authEvents empty for Linux auth logs and
+  // making all auth-based detectors (brute force, account takeover, impossible
+  // velocity) fire zero findings on syslog sources.
+  const isAuthEvent =
+    eventType.includes("LOGIN")       ||
+    eventType.includes("AUTH")        ||
+    eventType.includes("SESSION")     ||
+    eventType.includes("LOGON")       ||  // Windows event log terminology
+    eventType.includes("LOGOFF")      ||
+    eventType === "PERMISSION_DENIED" ||
+    eventType === "SUDO"              ||
+    statusCode === 401                ||
+    statusCode === 403;
+
+  if (!isAuthEvent) return undefined;
+
+  // Determine success: explicit success event types take precedence over status codes
+  const isSuccess =
+    eventType === "AUTH_SUCCESS"  ||
+    eventType === "LOGIN_SUCCESS" ||
+    eventType === "SESSION_START" ||
+    eventType === "LOGON_SUCCESS" ||
+    (statusCode !== undefined && String(statusCode).startsWith("2"));
+
+  // Determine failure reason with priority: explicit event type → HTTP status code
+  let failureReason: string | undefined;
+  if (eventType === "AUTH_FAILURE" || eventType === "LOGIN_FAILURE") {
+    failureReason = "invalid_credentials";
+  } else if (eventType === "PERMISSION_DENIED") {
+    failureReason = "access_denied";
+  } else if (statusCode === 401) {
+    failureReason = "invalid_credentials";
+  } else if (statusCode === 403) {
+    failureReason = "access_denied";
   }
-  return undefined;
+
+  return {
+    authenticated: statusCode !== 401 && eventType !== "AUTH_FAILURE" && eventType !== "LOGIN_FAILURE",
+    authSuccess: isSuccess,
+    failureReason,
+  };
 }
 
 function buildClientMetadata(log: ParsedLog, mapping: FieldMapping): ClientMetadata | undefined {

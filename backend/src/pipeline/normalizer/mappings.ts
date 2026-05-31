@@ -25,16 +25,26 @@ export interface ParserTypeMapping {
 }
 
 // 1. Web Logs (NGINX & Apache)
+// FIX: Added "metadata.method", "metadata.path", "metadata.userAgent" aliases.
+//
+// The nginx parser stores method, path, and userAgent inside log.metadata
+// (e.g. log.metadata.method = "GET"). The normalizer's extractField() already
+// supports dot-notation traversal, but the old webMapping only listed top-level
+// keys like "method" and "request". Without these aliases, extractField never
+// found the values, so normalizedLog.metadata.action.method was always undefined
+// for every nginx access log — silently breaking pathTraversal, sqlInjection,
+// xss, and every other detector that reads metadata.action.endpoint or
+// metadata.action.method.
 export const webMapping: FieldMapping = {
   timestamp: ["timestamp", "time_local", "$time_local"],
   sourceIp: ["remote_addr", "client_ip", "source_ip", "sourceIp"],
   user: ["remote_user", "username"],
   statusCode: ["status", "http_status", "response_code", "statusCode"],
-  method: ["method", "request_method", "http_method"],
-  url: ["request", "uri", "request_uri", "path"],
-  endpoint: ["request", "uri", "request_uri", "path"],
-  logLevel: ["log_level", "level", "logLevel"], 
-  userAgent: ["http_user_agent", "user_agent", "agent"],
+  method: ["method", "request_method", "http_method", "metadata.method"],
+  url: ["request", "uri", "request_uri", "path", "metadata.path"],
+  endpoint: ["request", "uri", "request_uri", "path", "metadata.path"],
+  logLevel: ["log_level", "level", "logLevel"],
+  userAgent: ["http_user_agent", "user_agent", "agent", "metadata.userAgent"],
   message: ["request", "log_message", "message"],
 };
 
@@ -113,7 +123,14 @@ export const fieldMappingsRegistry: ParserTypeMapping = {
   SURICATA_EVE: suricataMapping,
   DOCKER_JSON: jsonMapping,
   JSON: jsonMapping,
-  KEY_VALUE: firewallMapping, // Fallback for KV shares Firewall structure
+  // FIX: KEY_VALUE was mapped to firewallMapping, which looks for firewall-specific
+  // fields like SRC, ACT, ACTION. KV logs are general-purpose — they come from
+  // application logs, API gateways, auth systems, and anything else. Using
+  // firewallMapping meant KV logs with user_agent, endpoint, session_id, and
+  // other semantic fields had those values silently dropped because firewallMapping
+  // has no aliases for them. jsonMapping is the broadest general-purpose mapping
+  // and is the correct fallback for any structured but source-unknown format.
+  KEY_VALUE: jsonMapping,
   GENERIC: jsonMapping,
 };
 
