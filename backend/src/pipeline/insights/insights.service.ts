@@ -200,7 +200,9 @@ export const insightsService = {
       const enrichedFindings: AnalyzerFindingWithLogs[] = [];
 
       for (const finding of findings) {
-        const logIds = (finding.log_references as any)?.log_ids || [];
+        const logIds = Array.isArray(finding.log_references)
+          ? finding.log_references
+          : (finding.log_references as any)?.log_ids || [];
 
         let referencedLogs: any[] = [];
         if (logIds.length > 0) {
@@ -734,7 +736,9 @@ export const insightsService = {
       const logIds = new Set<string>();
 
       for (const finding of findings) {
-        const refLogIds = (finding.log_references as any)?.log_ids || [];
+        const refLogIds = Array.isArray(finding.log_references)
+          ? finding.log_references
+          : (finding.log_references as any)?.log_ids || [];
         for (const logId of refLogIds) {
           logIds.add(logId);
         }
@@ -920,16 +924,26 @@ export const insightsService = {
     for (const finding of findings) {
       if (finding.affected_entities) {
         const entities = new Set<string>();
-        
+
         // Dynamically scan for IPs or Usernames in the new schema
         for (const [key, value] of Object.entries(finding.affected_entities)) {
           // Check keys that likely contain attacker identities
-          if (key.includes('ip') || key.includes('user') || key.includes('attacker') || key.includes('source')) {
-            if (typeof value === 'string' && value !== "unknown" && value.trim() !== "") {
+          if (
+            key.includes("ip") ||
+            key.includes("user") ||
+            key.includes("attacker") ||
+            key.includes("source")
+          ) {
+            if (
+              typeof value === "string" &&
+              value !== "unknown" &&
+              value.trim() !== ""
+            ) {
               entities.add(value);
             } else if (Array.isArray(value)) {
-              value.forEach(v => {
-                if (typeof v === 'string' && v !== "unknown" && v.trim() !== "") entities.add(v);
+              value.forEach((v) => {
+                if (typeof v === "string" && v !== "unknown" && v.trim() !== "")
+                  entities.add(v);
               });
             }
           }
