@@ -24,6 +24,10 @@ const startWorkerProcess = async () => {
       // Initialize recovery queue after Redis is ready
       initializeRecoveryQueue();
     } catch (error) {
+      if (process.env.USE_DOCKER === "true") {
+        console.error("❌ Redis initialization failed in docker-only mode:", error);
+        throw error;
+      }
       console.warn(
         "⚠️  Redis initialization failed, continuing without Redis:",
         error,

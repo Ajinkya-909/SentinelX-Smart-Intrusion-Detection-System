@@ -50,6 +50,7 @@ services:
     ports:
       - "3000:3000"
     environment:
+      USE_DOCKER: "true"
       DOCKER_DATABASE_URL: postgresql://postgres:supersecretpassword@postgres-db:5432/sentinelx_ids
       DOCKER_REDIS_URL: redis://redis:6379
       ML_SERVICE_URL: http://ml-service:8000
@@ -69,6 +70,7 @@ services:
     restart: unless-stopped
     command: npm run worker
     environment:
+      USE_DOCKER: "true"
       DOCKER_DATABASE_URL: postgresql://postgres:supersecretpassword@postgres-db:5432/sentinelx_ids
       DOCKER_REDIS_URL: redis://redis:6379
       ML_SERVICE_URL: http://ml-service:8000

@@ -20,12 +20,16 @@ const startServer = async () => {
     await prisma.$queryRaw`SELECT 1`;
     console.log("✅ Database connected successfully");
 
-    // Initialize Redis with smart URL detection (non-blocking)
+    // Initialize Redis with smart URL detection
     try {
       await initializeRedis();
       // Initialize job queue after Redis is ready
       initializeQueue();
     } catch (error) {
+      if (process.env.USE_DOCKER === "true") {
+        console.error("❌ Redis initialization failed in docker-only mode:", error);
+        throw error;
+      }
       console.warn(
         "⚠️  Redis initialization failed, continuing without Redis:",
         error,
