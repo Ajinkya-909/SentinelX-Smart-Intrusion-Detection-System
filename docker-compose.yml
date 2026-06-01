@@ -58,6 +58,8 @@ services:
       - postgres-db
       - redis
       - ml-service
+    volumes:
+      - sentinelx_storage:/app/storage
     networks:
       - sentinelx-network
 
@@ -77,6 +79,8 @@ services:
     depends_on:
       - postgres-db
       - redis
+    volumes:
+      - sentinelx_storage:/app/storage
     networks:
       - sentinelx-network
 
@@ -97,6 +101,7 @@ services:
 volumes:
   sentinelx_pgdata:
   sentinelx_redis_data:
+  sentinelx_storage:
 
 networks:
   sentinelx-network:
