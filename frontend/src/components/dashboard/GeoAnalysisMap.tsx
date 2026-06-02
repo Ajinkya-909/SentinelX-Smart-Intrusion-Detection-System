@@ -5,7 +5,7 @@ import {
   Geography,
   ZoomableGroup,
 } from 'react-simple-maps';
-import { Globe, ChevronDown, ChevronUp, MapPin, Shield, Activity } from 'lucide-react';
+import { Globe, ChevronDown, ChevronUp, MapPin, Shield, Activity, List, X } from 'lucide-react';
 
 // Using a standard, lightweight TopoJSON file for world borders
 const geoUrl = 'https://unpkg.com/world-atlas@2.0.2/countries-110m.json';
@@ -265,9 +265,9 @@ const matchCountry = (apiCountry: string, geoName: string): boolean => {
   
   return false;
 };
-
-export const GeoAnalysisMap: React.FC<GeoAnalysisMapProps> = ({ data }) => {
+export const GeoAnalysisMap: React.FC<GeoAnalysisMapProps> = ({ data }) => {
   const [expandedCountry, setExpandedCountry] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Closed by default
 
   const toggleCountry = (countryName: string) => {
     if (expandedCountry === countryName) {
@@ -295,29 +295,44 @@ export const GeoAnalysisMap: React.FC<GeoAnalysisMapProps> = ({ data }) => {
           </p>
         </div>
 
-        <div className="bg-secondary/75 px-3 py-1.5 rounded-md border border-border/80 flex gap-3 text-[11px] font-mono backdrop-blur-md">
-          <span className="text-critical flex items-center">
-            <span className="w-2.5 h-2.5 inline-block bg-critical rounded-full mr-1" />
-            High Risk
-          </span>
-          <span className="text-accent flex items-center">
-            <span className="w-2.5 h-2.5 inline-block bg-accent rounded-full mr-1" />
-            Low Risk
-          </span>
-        </div>
+        {/* Sidebar Toggle Button */}
+        <button
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className={`p-2 px-3.5 rounded-lg border transition-all duration-200 backdrop-blur-sm flex items-center gap-2 text-xs font-semibold select-none shadow-md ${
+            isSidebarOpen
+              ? 'bg-accent/15 border-accent/40 text-accent glow-info'
+              : 'bg-secondary hover:bg-muted border-border text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          {isSidebarOpen ? (
+            <>
+              <X className="w-4 h-4" />
+              <span>Hide Breakdown</span>
+            </>
+          ) : (
+            <>
+              <List className="w-4 h-4" />
+              <span>Show Breakdown</span>
+            </>
+          )}
+        </button>
       </div>
 
       {/* Content Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-grow items-stretch mt-1 overflow-hidden">
-        {/* Map Vector */}
-        <div className="lg:col-span-8 flex items-center justify-center relative min-h-[280px] bg-secondary/10 rounded-lg border border-border/40 overflow-hidden">
+      <div className="relative flex-grow flex items-stretch mt-1 overflow-hidden rounded-lg border border-border/40">
+        {/* Map Vector (Fills full section width & height) */}
+        <div className="w-full h-full flex items-center justify-center relative bg-secondary/10 overflow-hidden">
           <ComposableMap
             projectionConfig={{ scale: 140 }}
             width={800}
             height={400}
             style={{ width: '100%', height: '100%' }}
           >
-            <ZoomableGroup center={[0, 20]}>
+            <ZoomableGroup
+              center={[0, 20]}
+              minZoom={1}
+              maxZoom={6}
+            >
               <Geographies geography={geoUrl}>
                 {({ geographies }) =>
                   geographies.map((geo) => {
@@ -362,10 +377,14 @@ export const GeoAnalysisMap: React.FC<GeoAnalysisMapProps> = ({ data }) => {
           </ComposableMap>
         </div>
 
-        {/* Details Sidebar Panel */}
-        <div className="lg:col-span-4 flex flex-col justify-between overflow-hidden relative bg-background/30 rounded-lg border border-border/40 p-4 backdrop-blur-sm min-h-[300px]">
+        {/* Collapsible Details Sidebar Panel (Overlay) */}
+        <div
+          className={`absolute right-0 top-0 bottom-0 w-80 z-20 flex flex-col justify-between overflow-hidden bg-background/95 border-l border-border/40 p-4 backdrop-blur-md transition-all duration-300 transform shadow-2xl ${
+            isSidebarOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'
+          }`}
+        >
           <div className="flex-grow flex flex-col justify-between overflow-hidden">
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase font-mono tracking-widest mb-3 flex items-center gap-1.5">
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase font-mono tracking-widest mb-3 flex items-center gap-1.5 shrink-0">
               <Shield className="w-3.5 h-3.5 text-accent" />
               Regional Breakdown
             </h4>
@@ -437,7 +456,7 @@ export const GeoAnalysisMap: React.FC<GeoAnalysisMapProps> = ({ data }) => {
                               </span>
                               <div className="flex items-center gap-2 font-medium">
                                 <span className="text-foreground">
-                                  {r.request_count} requests
+                                  {r.request_count} reqs
                                 </span>
                                 <span
                                   className="w-1.5 h-1.5 rounded-full"
@@ -456,10 +475,10 @@ export const GeoAnalysisMap: React.FC<GeoAnalysisMapProps> = ({ data }) => {
           </div>
 
           {/* Footer Metrics */}
-          <div className="mt-3 pt-3 border-t border-border/30 flex justify-between text-xs font-mono text-muted-foreground bg-card/10 px-2 py-1.5 rounded-md">
+          <div className="mt-3 pt-3 border-t border-border/30 flex justify-between text-xs font-mono text-muted-foreground bg-card/10 px-2 py-1.5 rounded-md shrink-0">
             <span className="flex items-center gap-1">
               <Activity className="w-3.5 h-3.5 text-accent" />
-              Total requests geolocated:
+              Total requests:
             </span>
             <span className="text-foreground font-bold tracking-wide">
               {data.total_requests}
