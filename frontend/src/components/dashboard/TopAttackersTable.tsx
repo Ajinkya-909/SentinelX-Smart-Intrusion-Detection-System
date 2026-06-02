@@ -20,7 +20,7 @@ export const TopAttackersTable: React.FC<TopAttackersTableProps> = ({ data }) =>
   if (!data?.attackers || data.attackers.length === 0) return null;
 
   return (
-    <div className="flex flex-col h-full bg-card border border-border rounded-xl p-5 gradient-card overflow-hidden relative">
+    <div className="flex flex-col h-[380px] bg-card border border-border rounded-xl p-5 gradient-card overflow-hidden relative">
       <div className="absolute inset-0 bg-gradient-to-br from-critical/[0.015] via-transparent to-accent/[0.01] pointer-events-none" />
 
       <div className="relative mb-4 flex justify-between items-end">

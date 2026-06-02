@@ -22,7 +22,7 @@ export const ActionPlanRemediationList: React.FC<ActionPlanRemediationListProps>
   const currentRec = data.recommendations[currentIndex];
 
   return (
-    <div className="flex flex-col h-full bg-card border border-border rounded-xl p-6 relative overflow-hidden gradient-card">
+    <div className="flex flex-col h-[500px] bg-card border border-border rounded-xl p-6 relative overflow-hidden gradient-card">
       <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.015] via-transparent to-accent/[0.015] pointer-events-none" />
 
       <div className="relative flex items-center justify-between mb-6">
@@ -60,51 +60,53 @@ export const ActionPlanRemediationList: React.FC<ActionPlanRemediationListProps>
         </div>
       </div>
 
-      <div className="relative flex-grow flex flex-col justify-between bg-secondary/60 border border-border rounded-lg p-5 backdrop-blur-sm">
-        <div>
-          <div className="flex justify-between items-start mb-3">
-            <h4 className="text-md font-bold text-foreground">
-              {currentRec.title}
-            </h4>
+      <div className="relative flex-grow flex flex-col justify-between bg-secondary/60 border border-border rounded-lg p-5 backdrop-blur-sm overflow-hidden h-0">
+        <div className="flex-grow overflow-y-auto pr-2 custom-scrollbar space-y-4 h-0">
+          <div>
+            <div className="flex justify-between items-start mb-3">
+              <h4 className="text-md font-bold text-foreground">
+                {currentRec.title}
+              </h4>
 
-            <span
-              className={`text-xs font-bold px-2 py-1 rounded shrink-0 ml-3 border ${
-                currentRec.priority === 'CRITICAL'
-                  ? 'bg-critical/10 text-critical border-critical/20'
-                  : 'bg-high/10 text-high border-high/20'
-              }`}
-            >
-              {currentRec.priority}
-            </span>
-          </div>
+              <span
+                className={`text-xs font-bold px-2 py-1 rounded shrink-0 ml-3 border ${
+                  currentRec.priority === 'CRITICAL'
+                    ? 'bg-critical/10 text-critical border-critical/20'
+                    : 'bg-high/10 text-high border-high/20'
+                }`}
+              >
+                {currentRec.priority}
+              </span>
+            </div>
 
-          <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
-            {currentRec.description}
-          </p>
+            <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
+              {currentRec.description}
+            </p>
 
-          <div className="bg-background/80 rounded-md p-4 border border-border/60 mb-4">
-            <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-              Action Steps
-            </h5>
+            <div className="bg-background/80 rounded-md p-4 border border-border/60 mb-4">
+              <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                Action Steps
+              </h5>
 
-            <ul className="space-y-3">
-              {currentRec.actions.map((action, actionIdx) => (
-                <li
-                  key={actionIdx}
-                  className="flex items-start space-x-3 text-sm text-foreground/90"
-                >
-                  <ArrowRight className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+              <ul className="space-y-3">
+                {currentRec.actions.map((action, actionIdx) => (
+                  <li
+                    key={actionIdx}
+                    className="flex items-start space-x-3 text-sm text-foreground/90"
+                  >
+                    <ArrowRight className="w-4 h-4 text-primary mt-0.5 shrink-0" />
 
-                  <span className="leading-snug">
-                    {action}
-                  </span>
-                </li>
-              ))}
-            </ul>
+                    <span className="leading-snug">
+                      {action}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-start space-x-2 pt-3 border-t border-border/60">
+        <div className="flex items-start space-x-2 pt-3 border-t border-border/60 mt-3 shrink-0">
           <CheckCircle2 className="w-4 h-4 text-low shrink-0 mt-0.5" />
 
           <p className="text-xs text-muted-foreground leading-relaxed">

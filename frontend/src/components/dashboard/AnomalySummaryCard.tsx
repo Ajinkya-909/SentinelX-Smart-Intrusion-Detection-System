@@ -12,7 +12,7 @@ export const AnomalySummaryCard: React.FC<AnomalySummaryCardProps> = ({ data }) 
   const isCritical = data.severity === 'CRITICAL';
 
   return (
-    <div className="flex flex-col h-full bg-card border border-border rounded-xl p-5 gradient-card relative overflow-hidden">
+    <div className="flex flex-col h-[380px] bg-card border border-border rounded-xl p-5 gradient-card relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.015] via-transparent to-accent/[0.015] pointer-events-none" />
 
       <div className="relative flex items-center space-x-3 mb-4">
@@ -43,7 +43,8 @@ export const AnomalySummaryCard: React.FC<AnomalySummaryCardProps> = ({ data }) 
         </div>
       </div>
 
-      <div className="relative flex-grow space-y-4">
+      {/* The scrolling container */}
+      <div className="relative flex-grow overflow-y-auto pr-2 custom-scrollbar space-y-4">
         <p className="text-sm text-foreground/85 leading-relaxed">
           {data.description}
         </p>

@@ -43,7 +43,7 @@ export const ThreatTimelineChart: React.FC<ThreatTimelineChartProps> = ({ data }
   };
 
   return (
-    <div className="flex flex-col w-full h-full bg-card border border-border rounded-xl p-5 gradient-card relative overflow-hidden">
+    <div className="flex flex-col w-full h-[380px] bg-card border border-border rounded-xl p-5 gradient-card relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-critical/[0.015] via-transparent to-primary/[0.01] pointer-events-none" />
 
       <div className="relative flex justify-between items-center mb-6">

@@ -280,7 +280,7 @@ export const GeoAnalysisMap: React.FC<GeoAnalysisMapProps> = ({ data }) => {
   if (!data?.countries || data.countries.length === 0) return null;
 
   return (
-    <div className="flex flex-col h-full bg-card border border-border rounded-xl p-5 gradient-card overflow-hidden relative select-none">
+    <div className="flex flex-col h-[500px] bg-card border border-border rounded-xl p-5 gradient-card overflow-hidden relative select-none">
       <div className="absolute inset-0 bg-gradient-to-br from-accent/[0.015] via-transparent to-primary/[0.01] pointer-events-none" />
 
       {/* Header */}
@@ -371,7 +371,7 @@ export const GeoAnalysisMap: React.FC<GeoAnalysisMapProps> = ({ data }) => {
             </h4>
 
             {/* Scrollable list of Countries */}
-            <div className="flex-grow overflow-y-auto pr-1 space-y-2.5 max-h-[220px] custom-scrollbar">
+            <div className="flex-grow overflow-y-auto pr-1 space-y-2.5 h-0 custom-scrollbar">
               {data.countries.map((c, index) => {
                 const isExpanded = expandedCountry === c.country;
                 const hasRegions = c.regions && c.regions.length > 0;

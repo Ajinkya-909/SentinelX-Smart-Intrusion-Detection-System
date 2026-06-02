@@ -10,7 +10,7 @@ export const SecurityAlertFeed: React.FC<SecurityAlertFeedProps> = ({ data }) =>
   if (!data?.alerts || data.alerts.length === 0) return null;
 
   return (
-    <div className="flex flex-col h-[350px] bg-card border border-border rounded-xl p-5 gradient-card relative overflow-hidden">
+    <div className="flex flex-col h-[380px] bg-card border border-border rounded-xl p-5 gradient-card relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-critical/[0.015] via-transparent to-primary/[0.01] pointer-events-none" />
 
       <div className="relative flex justify-between items-center mb-4 pb-3 border-b border-border">

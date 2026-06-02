@@ -27,7 +27,7 @@ export const EventTypeRadarChart: React.FC<EventTypeRadarChartProps> = ({ data }
   }));
 
   return (
-    <div className="flex flex-col h-full bg-card border border-border rounded-xl p-5 gradient-card relative overflow-hidden">
+    <div className="flex flex-col h-[400px] bg-card border border-border rounded-xl p-5 gradient-card relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-accent/[0.015] via-transparent to-primary/[0.015] pointer-events-none" />
 
       <div className="relative mb-2">

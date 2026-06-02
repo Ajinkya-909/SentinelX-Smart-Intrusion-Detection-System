@@ -13,7 +13,7 @@ export const ThreatSummaryCard: React.FC<ThreatSummaryCardProps> = ({ data }) =>
     data.overall_threat_classification === 'CRITICAL';
 
   return (
-    <div className="flex flex-col h-full bg-card border border-border rounded-xl p-6 gradient-card relative overflow-hidden">
+    <div className="flex flex-col h-[380px] bg-card border border-border rounded-xl p-6 gradient-card relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-critical/[0.015] via-transparent to-primary/[0.01] pointer-events-none" />
 
       <div className="relative flex items-center space-x-3 mb-4">
@@ -53,33 +53,36 @@ export const ThreatSummaryCard: React.FC<ThreatSummaryCardProps> = ({ data }) =>
         </div>
       </div>
 
-      <p className="relative text-sm text-foreground/85 mb-5 leading-relaxed">
-        {data.summary_narrative}
-      </p>
+      {/* The scrolling container */}
+      <div className="relative flex-grow overflow-y-auto pr-2 custom-scrollbar space-y-4">
+        <p className="relative text-sm text-foreground/85 leading-relaxed">
+          {data.summary_narrative}
+        </p>
 
-      <div className="relative bg-secondary/70 border border-border rounded-lg p-4 flex-grow backdrop-blur-sm">
-        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-          Immediate Concerns
-        </h4>
+        <div className="relative bg-secondary/70 border border-border rounded-lg p-4 backdrop-blur-sm">
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+            Immediate Concerns
+          </h4>
 
-        <ul className="space-y-3">
-          {data.immediate_concerns.map((concern, idx) => (
-            <li
-              key={idx}
-              className="flex items-start space-x-2 text-sm text-foreground/85 leading-relaxed"
-            >
-              <ShieldAlert
-                className={`w-4 h-4 mt-0.5 shrink-0 ${
-                  isCritical
-                    ? 'text-critical'
-                    : 'text-high'
-                }`}
-              />
+          <ul className="space-y-3">
+            {data.immediate_concerns.map((concern, idx) => (
+              <li
+                key={idx}
+                className="flex items-start space-x-2 text-sm text-foreground/85 leading-relaxed"
+              >
+                <ShieldAlert
+                  className={`w-4 h-4 mt-0.5 shrink-0 ${
+                    isCritical
+                      ? 'text-critical'
+                      : 'text-high'
+                  }`}
+                />
 
-              <span>{concern}</span>
-            </li>
-          ))}
-        </ul>
+                <span>{concern}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </div>
   );

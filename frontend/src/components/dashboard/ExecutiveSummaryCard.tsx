@@ -14,7 +14,7 @@ export const ExecutiveSummaryCard: React.FC<ExecutiveSummaryCardProps> = ({ data
     data.threat_level === 'HIGH';
 
   return (
-    <div className="flex flex-col h-full bg-card border border-border rounded-xl p-6 gradient-card relative overflow-hidden">
+    <div className="flex flex-col h-[380px] bg-card border border-border rounded-xl p-6 gradient-card relative overflow-hidden">
       {/* Subtle background glow based on threat level */}
       <div
         className={`absolute -top-10 -right-10 w-32 h-32 blur-3xl opacity-10 rounded-full pointer-events-none ${
@@ -51,8 +51,9 @@ export const ExecutiveSummaryCard: React.FC<ExecutiveSummaryCardProps> = ({ data
         </div>
       </div>
 
-      <div className="flex-grow relative z-10">
-        <p className="text-sm text-foreground/85 leading-relaxed mb-6">
+      {/* The scrolling container */}
+      <div className="relative flex-grow overflow-y-auto pr-2 custom-scrollbar z-10 space-y-4">
+        <p className="text-sm text-foreground/85 leading-relaxed">
           {data.summary}
         </p>
 

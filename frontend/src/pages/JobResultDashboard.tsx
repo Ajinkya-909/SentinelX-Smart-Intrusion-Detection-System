@@ -104,8 +104,8 @@ return (
     )}
 
     {/* BAND 1 */}
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-5 md:h-[360px] h-[380px]">
-      <div className="lg:col-span-8 h-full">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-5">
+      <div className="lg:col-span-8">
         {getInsightData('ACTIVITY_TIMELINE') && (
           <ActivityTimelineChart
             data={getInsightData('ACTIVITY_TIMELINE')}
@@ -113,7 +113,7 @@ return (
         )}
       </div>
 
-      <div className="lg:col-span-4 h-full">
+      <div className="lg:col-span-4">
         {getInsightData('TOP_ATTACKERS') && (
           <TopAttackersTable
             data={getInsightData('TOP_ATTACKERS')}
@@ -150,8 +150,8 @@ return (
     </div>
 
     {/* BAND 3 */}
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 md:h-[360px] h-[380px]">
-      <div className="lg:col-span-8 h-full">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div className="lg:col-span-8">
         {getInsightData('THREAT_TIMELINE') && (
           <ThreatTimelineChart
             data={getInsightData('THREAT_TIMELINE')}
@@ -159,7 +159,7 @@ return (
         )}
       </div>
 
-      <div className="lg:col-span-4 h-full">
+      <div className="lg:col-span-4">
         {getInsightData('ALERT') && (
           <SecurityAlertFeed
             data={getInsightData('ALERT')}
@@ -196,8 +196,8 @@ return (
     </div>
 
     {/* BAND 5 */}
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 md:h-[400px] h-[430px]">
-      <div className="lg:col-span-4 h-full">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div className="lg:col-span-4">
         {getInsightData('RECOMMENDATION') && (
           <ActionPlanRemediationList
             data={getInsightData('RECOMMENDATION')}
@@ -205,7 +205,7 @@ return (
         )}
       </div>
 
-      <div className="lg:col-span-8 h-full">
+      <div className="lg:col-span-8">
         {getInsightData('GEO_ANALYSIS') && (
           <GeoAnalysisMap
             data={getInsightData('GEO_ANALYSIS')}

@@ -26,7 +26,7 @@ export const ActivityTimelineChart: React.FC<ActivityTimelineChartProps> = ({ da
   }));
 
   return (
-    <div className="flex flex-col w-full h-full bg-card border border-border rounded-xl p-5 gradient-card overflow-hidden relative">
+    <div className="flex flex-col w-full h-[380px] bg-card border border-border rounded-xl p-5 gradient-card overflow-hidden relative">
       <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.015] via-transparent to-accent/[0.015] pointer-events-none" />
 
       <div className="relative flex justify-between items-center mb-6">
