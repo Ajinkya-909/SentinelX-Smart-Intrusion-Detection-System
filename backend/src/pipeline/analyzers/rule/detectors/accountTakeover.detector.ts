@@ -9,7 +9,7 @@ export const accountTakeoverDetector: IDetector = {
   async detect(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     const findings: AnalyzerFinding[] = [];
 
-    const authLogs = ctx.logs.filter(log => log.event_type.includes("LOGIN"));
+    const authLogs = ctx.logs.filter(log => log.metadata?.security !== undefined);
     if (authLogs.length === 0) return findings;
 
     // Group by User to track the sequence of their specific logins

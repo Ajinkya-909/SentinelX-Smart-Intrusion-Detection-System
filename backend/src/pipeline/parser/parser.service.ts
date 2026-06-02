@@ -1,5 +1,6 @@
 import logger from "../../config/logger";
 import { nginxParser } from "./strategies/nginx.parser";
+import { apacheParser } from "./strategies/apache.parser";
 import { syslogParser } from "./strategies/syslog.parser";
 import { jsonParser } from "./strategies/json.parser";
 import { keyValueParser } from "./strategies/keyvalue.parser";
@@ -48,10 +49,14 @@ class ParserService {
   private selectParser(detectedType: string): BaseParser {
     switch (detectedType) {
       case "NGINX_ACCESS":
-      case "APACHE_LOG": // Map Apache to the Nginx parser since they share the "Combined" format
+      case "NGINX_ERROR":
         return nginxParser;
+      case "APACHE_ACCESS":
+      case "APACHE_ERROR":
+        return apacheParser;
       case "SYSLOG": 
         return syslogParser;
+      case "WINDOWS_EVENT":
       case "JSON":
       case "AWS_CLOUDTRAIL":
       case "SURICATA_EVE":

@@ -12,7 +12,7 @@ export const rapidAuthVelocityDetector: IDetector = {
     const config = loadAnalyzerConfig();
 
     // Filter down to ANY authentication attempt (success or failure)
-    const authLogs = ctx.logs.filter(log => log.event_type === "LOGIN_ATTEMPT" || log.event_type === "LOGIN_FAILED");
+    const authLogs = ctx.logs.filter(log => log.metadata?.security !== undefined);
     if (authLogs.length === 0) return findings;
 
     const authByIp = grouping.groupByIp(authLogs);

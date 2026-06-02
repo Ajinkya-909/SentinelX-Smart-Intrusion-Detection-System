@@ -15,7 +15,7 @@ export function extractIpFeatures(
 
   // ===== AUTHENTICATION BEHAVIOR =====
   // FIX: Rely on normalizer's security context
-  const authLogs = ipLogs.filter(log => log.metadata?.security !== undefined || log.event_type.includes("LOGIN"));
+  const authLogs = ipLogs.filter(log => log.metadata?.security !== undefined);
   const failedAuthLogs = authLogs.filter(log => log.metadata?.security?.authSuccess === false);
   const successfulAuthLogs = authLogs.filter(log => log.metadata?.security?.authSuccess === true);
 

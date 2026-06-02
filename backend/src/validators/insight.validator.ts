@@ -200,6 +200,14 @@ export const GeoAnalysisInsightSchema = z.object({
       country: z.string().min(1),
       request_count: z.number().int().nonnegative(),
       severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]),
+      country_code: z.string().optional(),
+      regions: z.array(
+        z.object({
+          region: z.string(),
+          request_count: z.number(),
+          severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]),
+        })
+      ).optional(),
     }),
   ),
   total_requests: z.number().int().nonnegative(),

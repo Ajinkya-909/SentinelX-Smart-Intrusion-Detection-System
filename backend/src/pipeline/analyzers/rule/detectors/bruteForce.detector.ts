@@ -12,7 +12,7 @@ export const bruteForceDetector: IDetector = {
     const config = loadAnalyzerConfig();
 
     // Filter only logs that explicitly indicate authentication failures
-    const failedAuthLogs = ctx.logs.filter(log => log.event_type === "LOGIN_FAILED");
+    const failedAuthLogs = ctx.logs.filter(log => log.metadata?.security?.authSuccess === false);
     if (failedAuthLogs.length === 0) return findings;
 
     // Group the failures by IP address

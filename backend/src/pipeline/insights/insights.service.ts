@@ -22,6 +22,7 @@ import {
   InsightRecord,
   AttackerInfo,
 } from "@/types/insight.types";
+import { GeoIPUtil } from "@/utils/geoip";
 
 // ==========================================
 // TYPES
@@ -553,35 +554,19 @@ export const insightsService = {
 
   /**
    * Generate GEO_ANALYSIS from findings.
-   *
-   * FIX: The previous version returned `{ countries, total_countries }` but
-   * GeoAnalysisInsightSchema expects `{ countries, total_requests }`. This
-   * caused the entire GEO_ANALYSIS insight to be silently dropped on every run.
-   *
-   * NOTE: The schema also requires `total_requests` (not `total_countries`) and
-   * does NOT include `threat_count` per country. The country objects returned
-   * here match what GeoAnalysisInsightSchema actually validates.
+   * Uses local GeoIP offline lookup to build detailed country and region data.
    */
   generateGeoAnalysis(findings: AnalyzerFindingWithLogs[]): any {
     const countryMap = new Map<
       string,
-      { request_count: number; severity: string }
+      {
+        country_code: string;
+        continent: string;
+        request_count: number;
+        severity: string;
+        regions: Map<string, { request_count: number; severity: string }>;
+      }
     >();
-
-    const getCountryFromIP = (ip: string): string => {
-      if (!ip) return "Unknown";
-      const parts = ip.split(".");
-      if (!parts[0]) return "Unknown";
-      const firstOctet = parseInt(parts[0], 10);
-      if (firstOctet >= 1 && firstOctet <= 24) return "United States";
-      if (firstOctet >= 25 && firstOctet <= 49) return "Europe";
-      if (firstOctet >= 50 && firstOctet <= 99) return "Asia";
-      if (firstOctet >= 100 && firstOctet <= 149) return "Europe";
-      if (firstOctet >= 150 && firstOctet <= 176) return "Asia";
-      if (firstOctet >= 177 && firstOctet <= 200) return "South America";
-      if (firstOctet >= 201 && firstOctet <= 220) return "Africa";
-      return "Other";
-    };
 
     const severityOrder: Record<string, number> = {
       CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, INFO: 0,
@@ -590,37 +575,67 @@ export const insightsService = {
     for (const finding of findings) {
       for (const log of finding.referenced_logs) {
         if (log.ip_address) {
-          const country = getCountryFromIP(log.ip_address);
-          const existing = countryMap.get(country) || {
+          const geo = GeoIPUtil.lookupIP(log.ip_address);
+          const countryKey = geo.country || "Unknown";
+
+          const countryData = countryMap.get(countryKey) || {
+            country_code: geo.country_code || "UN",
+            continent: geo.continent || "Unknown",
             request_count: 0,
-            severity: "LOW",
+            severity: "INFO",
+            regions: new Map<string, { request_count: number; severity: string }>(),
           };
 
-          existing.request_count++;
+          countryData.request_count++;
 
+          const findingSeverity = finding.severity || "INFO";
           if (
-            (severityOrder[finding.severity] || 0) >
-            (severityOrder[existing.severity] || 0)
+            (severityOrder[findingSeverity] || 0) >
+            (severityOrder[countryData.severity] || 0)
           ) {
-            existing.severity = finding.severity || "LOW";
+            countryData.severity = findingSeverity;
           }
 
-          countryMap.set(country, existing);
+          const regionKey = geo.region || "Unknown Region";
+          const regionData = countryData.regions.get(regionKey) || {
+            request_count: 0,
+            severity: "INFO",
+          };
+
+          regionData.request_count++;
+          if (
+            (severityOrder[findingSeverity] || 0) >
+            (severityOrder[regionData.severity] || 0)
+          ) {
+            regionData.severity = findingSeverity;
+          }
+
+          countryData.regions.set(regionKey, regionData);
+          countryMap.set(countryKey, countryData);
         }
       }
     }
 
     const countries = Array.from(countryMap.entries())
-      .map(([country, data]) => ({
-        country,
-        request_count: data.request_count,
-        severity: data.severity,
-      }))
+      .map(([countryName, data]) => {
+        const regionsArray = Array.from(data.regions.entries())
+          .map(([regionName, rData]) => ({
+            region: regionName,
+            request_count: rData.request_count,
+            severity: rData.severity as any,
+          }))
+          .sort((a, b) => b.request_count - a.request_count);
+
+        return {
+          country: countryName,
+          country_code: data.country_code,
+          request_count: data.request_count,
+          severity: data.severity as any,
+          regions: regionsArray,
+        };
+      })
       .sort((a, b) => b.request_count - a.request_count);
 
-    // FIX: Return `total_requests` (sum of all request_counts) to match
-    // GeoAnalysisInsightSchema. The old field name `total_countries` caused
-    // every GEO_ANALYSIS insight to fail Zod validation and be dropped.
     const total_requests = countries.reduce(
       (sum, c) => sum + c.request_count,
       0,

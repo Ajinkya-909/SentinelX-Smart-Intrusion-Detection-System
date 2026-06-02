@@ -2,8 +2,10 @@ import { DetectionResult } from "../../types/db.types";
 import { jobRepository } from "../../repositories/job.repository";
 import logger from "../../config/logger";
 import {
-  nginxDetector,
-  apacheDetector,
+  nginxAccessDetector,
+  nginxErrorDetector,
+  apacheAccessDetector,
+  apacheErrorDetector,
   syslogDetector,
   windowsEventDetector,
   firewallDetector,
@@ -14,6 +16,17 @@ import {
   keyValueDetector,
   genericDetector
 } from "./detectors";
+
+// Types we want to detect (not exhaustive, but common formats to start with):
+// Linux Syslog
+// Apache Access
+// Apache Error
+// Nginx Access
+// Windows Events
+// Firewall
+// Suricata
+// CloudTrail
+// Docker
 
 // ============================================================================
 // PHASE 1: TIERED DETECTOR HIERARCHY
@@ -30,8 +43,10 @@ const TIER_1_HIGH_FIDELITY = [
 // Tier 2: Standard Infrastructure. Strict text formats with predictable regex.
 const TIER_2_INFRASTRUCTURE = [
   syslogDetector,
-  nginxDetector,
-  apacheDetector,
+  nginxAccessDetector,
+  nginxErrorDetector,
+  apacheAccessDetector,
+  apacheErrorDetector,
   firewallDetector
 ];
 

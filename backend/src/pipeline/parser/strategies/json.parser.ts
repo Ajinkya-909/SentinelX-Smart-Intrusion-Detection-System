@@ -4,22 +4,67 @@ import { ParsedLog } from "../types";
 export class JsonParser extends BaseParser {
   // Generic field aliases
   private readonly genericMappings = {
-    timestamp: ["timestamp", "time", "created_at", "date", "ts", "@timestamp", "datetime", "EventTime"],
-    level: ["level", "severity", "priority", "log_level", "loglevel", "alert.severity"],
-    message: ["message", "msg", "text", "event", "content", "description", "eventName"],
-    sourceIp: ["ip", "source_ip", "src_ip", "client_ip", "remote_addr", "sourceIPAddress"],
-    user: ["user", "username", "user_id", "uid", "actor", "userIdentity.userName", "userIdentity.arn"],
-    statusCode: ["status", "status_code", "code", "http_status"]
+    timestamp: [
+      "timestamp",
+      "time",
+      "created_at",
+      "date",
+      "ts",
+      "@timestamp",
+      "datetime",
+      "EventTime",
+      "__REALTIME_TIMESTAMP",
+      "_SOURCE_REALTIME_TIMESTAMP",
+    ],
+    level: [
+      "level",
+      "severity",
+      "priority",
+      "log_level",
+      "loglevel",
+      "alert.severity",
+      "PRIORITY",
+    ],
+    message: [
+      "message",
+      "msg",
+      "text",
+      "event",
+      "content",
+      "description",
+      "eventName",
+      "MESSAGE",
+    ],
+    sourceIp: [
+      "ip",
+      "source_ip",
+      "src_ip",
+      "client_ip",
+      "remote_addr",
+      "sourceIPAddress",
+      "_IP_ADDRESS",
+    ],
+    user: [
+      "user",
+      "username",
+      "user_id",
+      "uid",
+      "actor",
+      "userIdentity.userName",
+      "userIdentity.arn",
+      "_SYSTEMD_USER",
+    ],
+    statusCode: ["status", "status_code", "code", "http_status"],
   };
 
   // FIX 1: Changed from protected to public to match BaseParser signature
   public parseLine(line: string): ParsedLog | null {
     try {
       const json = JSON.parse(line);
-      if (!json || typeof json !== 'object') return null;
+      if (!json || typeof json !== "object") return null;
 
       // 1. DOCKER ENVELOPE UNPACKER
-      if (json.log && (json.stream === 'stdout' || json.stream === 'stderr')) {
+      if (json.log && (json.stream === "stdout" || json.stream === "stderr")) {
         return {
           timestamp: new Date(json.time || new Date()),
           logLevel: this.inferDockerLevel(json.stream, json.log),
@@ -28,8 +73,8 @@ export class JsonParser extends BaseParser {
           metadata: {
             wrapper: "docker",
             container_id: json.container_id,
-            original_json: json
-          }
+            original_json: json,
+          },
         };
       }
 
@@ -47,10 +92,10 @@ export class JsonParser extends BaseParser {
             dest_port: json.dest_port,
             signature_id: json.alert.signature_id,
             category: json.alert.category,
-            original_json: json
-          }
+            original_json: json,
+          },
         };
-        
+
         // Fix for exactOptionalPropertyTypes
         if (json.src_ip) suricataLog.sourceIp = String(json.src_ip);
         return suricataLog;
@@ -69,24 +114,114 @@ export class JsonParser extends BaseParser {
             errorCode: json.errorCode,
             userAgent: json.userAgent,
             requestParameters: json.requestParameters,
-            original_json: json
-          }
+            original_json: json,
+          },
         };
 
         // Fix for exactOptionalPropertyTypes
-        if (json.sourceIPAddress) cloudTrailLog.sourceIp = String(json.sourceIPAddress);
-        
+        if (json.sourceIPAddress)
+          cloudTrailLog.sourceIp = String(json.sourceIPAddress);
+
         const userArn = json.userIdentity.arn || json.userIdentity.userName;
         if (userArn) cloudTrailLog.user = String(userArn);
 
         return cloudTrailLog;
       }
 
-      // 4. GENERIC JSON EXTRACTION
-      const timestampRaw = this.extractField(json, this.genericMappings.timestamp);
+      // 4. WINDOWS EVENT JSON UNPACKER (Enhanced for Phase 2)
+      // Supports both nested winlogbeat/sysmon format and flat JSON exports
+      // Nested: {"Event": {"System": {"EventID": {...}, "TimeCreated": {...}, "Provider": {...}}}}
+      // Flat: {"EventID": 4688, "Channel": "Security", "TargetUserName": "..."}
+      if (json.Event || (json.System && json.System.EventID) || json.EventID) {
+        // Extract Windows event level and map to standard log levels
+        const winLevel = json.System?.Level ?? json.Level;
+        let logLevel = "INFO";
+        if (winLevel === 1 || winLevel === "1") logLevel = "CRITICAL";
+        else if (winLevel === 2 || winLevel === "2") logLevel = "ERROR";
+        else if (winLevel === 3 || winLevel === "3") logLevel = "WARN";
+        else if (winLevel === 4 || winLevel === "4") logLevel = "INFO";
+
+        // Extract event message - try multiple sources
+        const winMsg =
+          json.EventData?.Message ||
+          json.Description ||
+          json.Message ||
+          json.System?.Provider?.Name ||
+          "Windows Event Log";
+
+        const winLog: ParsedLog = {
+          timestamp:
+            json.System?.TimeCreated?.SystemTime || json.TimeCreated
+              ? new Date(
+                  json.System?.TimeCreated?.SystemTime || json.TimeCreated,
+                )
+              : new Date(),
+          logLevel,
+          message: String(winMsg).substring(0, 500),
+          raw: line,
+          metadata: {
+            wrapper: "windows_event",
+            event_id: json.System?.EventID || json.EventID,
+            channel: json.System?.Channel || json.Channel,
+            provider: json.System?.Provider?.Name || json.Provider,
+            // PHASE 2: Promote nested Windows fields to root for easier access by normalizer
+            computer: json.System?.Computer || json.Computer,
+            level: winLevel,
+            original_json: json,
+          },
+        };
+
+        // Extract IP address from multiple possible locations
+        const winIp =
+          json.EventData?.IpAddress ||
+          json.IpAddress ||
+          json.source_ip ||
+          json.System?.Computer;
+        if (winIp && this.isValidIp(String(winIp))) {
+          winLog.sourceIp = String(winIp);
+        }
+
+        // Extract username from multiple possible locations
+        const winUser =
+          json.EventData?.TargetUserName ||
+          json.EventData?.SubjectUserName ||
+          json.TargetUserName ||
+          json.SubjectUserName ||
+          json.User;
+        if (winUser) {
+          winLog.user = String(winUser);
+        }
+
+        // PHASE 2: Capture important Windows-specific metadata
+        if (json.EventData?.CommandLine) {
+          winLog.metadata.command_line = String(
+            json.EventData.CommandLine,
+          ).substring(0, 500);
+        }
+        if (json.EventData?.ParentImage) {
+          winLog.metadata.parent_image = String(json.EventData.ParentImage);
+        }
+        if (json.EventData?.ProcessId || json.ProcessId) {
+          winLog.metadata.process_id =
+            json.EventData?.ProcessId || json.ProcessId;
+        }
+
+        return winLog;
+      }
+
+      // 5. GENERIC JSON EXTRACTION
+      const timestampRaw = this.extractField(
+        json,
+        this.genericMappings.timestamp,
+      );
       const levelRaw = this.extractField(json, this.genericMappings.level);
-      const messageRaw = this.extractField(json, this.genericMappings.message) || JSON.stringify(json).substring(0, 200);
-      const sourceIpRaw = this.extractField(json, this.genericMappings.sourceIp);
+      const messageRaw =
+        this.extractField(json, this.genericMappings.message) ||
+        JSON.stringify(json).substring(0, 200);
+      const sourceIpRaw = this.extractField(
+        json,
+        this.genericMappings.sourceIp,
+      );
 
       const genericLog: ParsedLog = {
         timestamp: timestampRaw ? new Date(timestampRaw) : new Date(),
@@ -95,8 +230,8 @@ export class JsonParser extends BaseParser {
         raw: line,
         metadata: {
           wrapper: "generic_json",
-          original_json: json
-        }
+          original_json: json,
+        },
       };
 
       // FIX 2: Only assign optional properties if they actually exist to satisfy exactOptionalPropertyTypes
@@ -105,7 +240,6 @@ export class JsonParser extends BaseParser {
       }
 
       return genericLog;
-
     } catch (e) {
       return null;
     }
@@ -113,7 +247,7 @@ export class JsonParser extends BaseParser {
 
   private extractField(obj: any, paths: string[]): any {
     for (const path of paths) {
-      const keys = path.split('.');
+      const keys = path.split(".");
       let current = obj;
       for (const key of keys) {
         if (current === undefined || current === null) break;
@@ -127,11 +261,30 @@ export class JsonParser extends BaseParser {
   }
 
   private inferDockerLevel(stream: string, logString: string): string {
-    if (stream === 'stderr') return "ERROR";
+    if (stream === "stderr") return "ERROR";
     const lower = String(logString).toLowerCase();
-    if (lower.includes("error") || lower.includes("fail") || lower.includes("fatal")) return "ERROR";
+    if (
+      lower.includes("error") ||
+      lower.includes("fail") ||
+      lower.includes("fatal")
+    )
+      return "ERROR";
     if (lower.includes("warn")) return "WARN";
     return "INFO";
+  }
+
+  /**
+   * Validate if a string is a valid IPv4 or IPv6 address
+   */
+  private isValidIp(ip: string): boolean {
+    if (!ip) return false;
+    // IPv4: xxx.xxx.xxx.xxx
+    const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+    if (ipv4Regex.test(ip)) return true;
+    // IPv6: basic check for colons and hex digits
+    const ipv6Regex = /^([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}$/i;
+    if (ipv6Regex.test(ip)) return true;
+    return false;
   }
 }
 

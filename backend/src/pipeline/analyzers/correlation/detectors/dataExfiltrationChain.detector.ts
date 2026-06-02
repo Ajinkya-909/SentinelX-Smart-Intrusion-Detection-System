@@ -11,7 +11,7 @@ export const dataExfiltrationChainDetector: IDetector = {
 
     // 1. Identify suspicious activities (Logins or Lateral Movement)
     const suspiciousEvents = ctx.logs.filter(l => 
-      l.event_type === "LOGIN_ATTEMPT" || 
+      l.metadata?.security?.authSuccess === false || 
       l.event_type === "LATERAL_MOVEMENT_SUSPICION"
     );
 

@@ -5,8 +5,9 @@ export class NginxParser extends BaseParser {
   public parseLine(line: string): ParsedLog | null {
     if (!line || !line.trim()) return null;
 
-    // --- NEW: Handle NGINX Error Logs ---
+    // --- NGINX Error Logs ---
     // Format: 2026/05/15 10:30:45 [error] 12345#0: *6789 message, client: 1.1.1.1, server: localhost...
+    // STRICT: Must have timestamp, level, and pid#tid format
     const errorMatch = line.match(
       /^(\d{4}\/\d{2}\/\d{2}\s+\d{2}:\d{2}:\d{2})\s+\[([a-z]+)\]\s+(\d+#\d+):\s+(.*)/i,
     );
@@ -37,13 +38,21 @@ export class NginxParser extends BaseParser {
       return log;
     }
 
-    // --- EXISTING: Handle NGINX/Apache Access Logs ---
+    // --- NGINX Access Logs ---
+    // STRICT: Must start with IP address and have bracketed [timestamp] format
+    // Combined format: IP - user [date] "METHOD path HTTP/1.x" status bytes "referrer" "userAgent"
     let remainingLine = line;
 
     const ipMatch = remainingLine.match(/^([0-9a-fA-F:.]+)\s/);
     const sourceIp: string | undefined = ipMatch ? ipMatch[1] : undefined;
 
     const timeMatch = remainingLine.match(/\[([^\]]+)\]/);
+
+    // STRICT VALIDATION: Access logs MUST have IP at start AND bracketed timestamp
+    // If either is missing, this is not a valid Nginx log - return null instead of guessing
+    if (!sourceIp || !timeMatch) {
+      return null;
+    }
     const timestamp =
       timeMatch && timeMatch[1]
         ? this.parseNginxTimestamp(timeMatch[1])

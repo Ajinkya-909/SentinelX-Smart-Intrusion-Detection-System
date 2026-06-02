@@ -17,7 +17,7 @@ export function extractUserFeatures(
   const httpErrorCount = errorCount;
 
   // ===== LOGIN BEHAVIOR =====
-  const authLogs = userLogs.filter(log => log.metadata?.security !== undefined || log.event_type.includes("LOGIN"));
+  const authLogs = userLogs.filter(log => log.metadata?.security !== undefined);
   const failedLogins = authLogs.filter(log => log.metadata?.security?.authSuccess === false).length;
   const successfulLogins = authLogs.filter(log => log.metadata?.security?.authSuccess === true).length;
   const loginAttempts = authLogs.length;

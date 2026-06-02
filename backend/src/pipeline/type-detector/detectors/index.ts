@@ -1,5 +1,5 @@
-export { nginxDetector, NginxDetector } from "./nginx.detector";
-export { apacheDetector, ApacheDetector } from "./apache.detector";
+export { nginxAccessDetector, nginxErrorDetector, NginxAccessDetector, NginxErrorDetector } from "./nginx.detector";
+export { apacheAccessDetector, apacheErrorDetector, ApacheAccessDetector, ApacheErrorDetector } from "./apache.detector";
 export { syslogDetector, SyslogDetector } from "./syslog.detector";
 export { windowsEventDetector, WindowsEventDetector } from "./windows.detector";
 export { firewallDetector, FirewallDetector } from "./firewall.detector";

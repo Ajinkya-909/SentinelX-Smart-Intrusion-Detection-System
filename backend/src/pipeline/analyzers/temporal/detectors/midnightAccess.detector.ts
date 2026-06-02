@@ -11,8 +11,7 @@ export const midnightAccessDetector: IDetector = {
     const unusualHours = [1, 2, 3, 4]; // 1 AM to 4 AM range
 
     for (const log of ctx.logs) {
-      // Look explicitly for successful authentications
-      if (log.event_type !== "LOGIN_ATTEMPT" && log.event_type !== "SSH_LOGIN_ATTEMPT") continue;
+      if (log.metadata?.security === undefined) continue;
       if (log.metadata?.security?.authSuccess !== true) continue;
 
       const hour = timeline.getHour(log);
