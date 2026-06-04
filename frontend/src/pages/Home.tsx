@@ -386,7 +386,7 @@ Failure Information:
       </div>
 
       {/* HERO & LIVE MAP SECTION */}
-      <section className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 pb-16 z-10">
+      <section className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 sm:pt-24 md:pt-32 pb-16 z-10">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           
           {/* Left Text */}
@@ -409,7 +409,7 @@ Failure Information:
               <div className="flex flex-col sm:flex-row gap-4">
                 <Button
                   size="lg"
-                  className="flex-1 bg-primary hover:bg-primary/95 text-primary-foreground font-bold tracking-wide rounded-lg flex items-center justify-center gap-2 transition-all duration-300 transform hover:scale-[1.01] shadow-[0_0_15px_rgba(132,255,13,0.2)]"
+                  className="sm:flex-1 bg-primary hover:bg-primary/95 text-primary-foreground font-bold tracking-wide rounded-lg flex items-center justify-center gap-2 transition-all duration-300 transform hover:scale-[1.01] shadow-[0_0_15px_rgba(132,255,13,0.2)]"
                   onClick={() => navigate("/login")}
                 >
                   Launch Console
@@ -418,7 +418,7 @@ Failure Information:
                 <Button
                   size="lg"
                   variant="outline"
-                  className="flex-1 border-border hover:border-primary/50 hover:bg-primary/5 hover:text-primary text-foreground font-semibold rounded-lg flex items-center justify-center gap-2 transition-all duration-300 transform hover:scale-[1.01]"
+                  className="sm:flex-1 border-border hover:border-primary/50 hover:bg-primary/5 hover:text-primary text-foreground font-semibold rounded-lg flex items-center justify-center gap-2 transition-all duration-300 transform hover:scale-[1.01]"
                   onClick={() => navigate("/public/jobresult")}
                 >
                   <Eye className="w-4 h-4 text-primary" />
