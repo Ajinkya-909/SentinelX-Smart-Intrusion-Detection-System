@@ -1,795 +1,170 @@
-# SentinelX – Data Processing Pipeline Document
+# 🔄 SentinelX – Data Processing Pipeline Document
 
 This document defines the **complete internal execution pipeline** of SentinelX. It explains, in detail, how a log file moves through the system—from ingestion to final insights—covering **each stage, transitions, failure handling, and system behavior**.
 
 ---
 
-# 1. Pipeline Philosophy
+## 1. Pipeline Philosophy
 
-SentinelX uses a **stage-based, checkpoint-driven pipeline** executed by background workers.
-
-The pipeline is designed to be:
-
-- Fault-tolerant
-- Idempotent
-- Resume-capable
-- Modular
-
-### Core Principle
-
-> A stage is only marked complete when its output is fully generated and validated.
+SentinelX uses a **stage-based, checkpoint-driven pipeline** executed by background queue workers. The pipeline is designed to be:
+- **Fault-tolerant**: Recovers from crash states without repeating heavy parsing computations.
+- **Idempotent**: Re-running stages cleans up partial states to avoid duplicate database inserts.
+- **Resume-capable**: Evaluates job state at startup and picks up exactly where it failed.
+- **Resource-bounded**: Caps Event Loop usage and RAM via chunked streaming and sliding window operations.
 
 ---
 
-# 2. High-Level Flow
+## 2. High-Level Flow
 
 ```text
-UPLOAD → PREPROCESS → TYPE DETECTION → PARSE → NORMALIZE → ANALYZER ORCHESTRATOR → INSIGHTS GENERATION → STORE RESULTS
+Log Upload (UPLOADED)
+  ↓
+Ingestion & Preprocessing
+  ↓
+Dynamic Type Detection
+  ↓
+Adaptive Parsing & Normalization (NORMALIZED Checkpoint)
+  ↓
+Sliding Window Analysis (Rule, Stats, ML, Temporal, Correlation) (ANALYZED Checkpoint)
+  ↓
+Aggregated Metrics & Threat Summarization (INSIGHTS_GENERATED Checkpoint)
 ```
 
-Each stage follows a strict lifecycle:
+### Logical Stages vs. Transactional Checkpoints
+Although the pipeline performs **8 distinct logical steps** to safely extract and scan log data, it groups database persistence updates into **4 Consolidated Checkpoints**. 
 
-```text
-Pre-Stage Check → Execution → Validation → Checkpoint Update
-```
+Grouping stages reduces database transactional overhead (reducing database round-trips) and prevents intermediate corrupted states from polluting tables.
 
 ---
 
-# 3. Pipeline Entry (Worker Initialization)
+## 3. Detailed Logical Stages
 
-When a worker picks a job from the queue:
+### Stage 1: File Ingestion (Upload)
+* **Why it happens**: Initializes a job tracking record and places raw log uploads into a secure storage environment (`/app/storage`).
+* **Input**: Multer file stream, `userId` (owner).
+* **Execution**: Saves files to storage and inserts a job record with status `UPLOADED`.
+* **Output**: `jobId`, `filePath`.
+* **Persistence**: Raw file saved to disk; `jobs` table record inserted.
 
-### What Happens
-
-- Worker receives `jobId`
-- Fetches job metadata from database
-- Determines `lastCompletedStage`
-
-### Decision Logic
-
-- Resume from last successful stage
-- Skip already completed stages
-
----
-
-# 4. Stage 1: Upload
-
-## Overview
-
-File ingestion and job initialization.
-
----
-
-## Input
-
-- File object
-- userId
-
----
-
-## Execution
-
-- Save raw file to storage
-- Create job record in database
-- Enqueue worker payload
-
----
-
-## Output
-
-- jobId
-- filePath
-
----
-
-## Persistence
-
-| Data       | Stored? | Location     |
-| ---------- | ------- | ------------ |
-| Raw file   | YES     | File storage |
-| Job record | YES     | jobs table   |
-
----
-
-## Post-Stage
-
-- Update DB: `lastCompletedStage = UPLOADED`
-- Queue payload: `{ jobId, filePath }`
-
----
-
-## Failure Handling
-
-- If file save fails → retry with limited attempts
-- If DB write fails → transactional rollback
-
----
-
-# 5. Stage 2: Preprocess
-
-## Overview
-
-Prepares raw file for type detection and parsing.
-
----
-
-## Input
-
-- filePath
-- jobId
-
----
-
-## Execution
-
-- Read file
-- Split into lines
-- Detect encoding
-- Sanitize empty lines
-- Clean whitespace
-
----
-
-## Output (In-Memory Only)
-
-- rawLines: `string[]`
-- metadata: `{ encoding, lineCount, fileSize }`
-
----
-
-## Persistence
-
-**DO NOT STORE** - This is transient data. Only pass to next stage in memory.
-
----
-
-## Post-Stage
-
-- Update DB: `lastCompletedStage = PREPROCESSED`
-
----
-
-## Failure Handling
-
-- If encoding detection fails → default to UTF-8
-- If read fails → retry with backoff
-
----
-
-# 6. Stage 3: Type Detection
-
-## Overview
-
-Identifies log source type and selects appropriate parser strategy.
-
----
-
-## Input
-
-- rawLines: `string[]`
-
----
-
-## Execution
-
-- Analyze line patterns
-- Detect log type (NGINX_ACCESS, SYSLOG, JSON, etc.)
-- Determine parser strategy
-- Calculate confidence score
-
----
-
-## Output
-
-```json
-{
-  "detectedType": "NGINX_ACCESS",
-  "confidence": 0.91,
-  "parser": "nginxParserV1",
-  "encoding": "utf8"
-}
-```
-
----
-
-## Persistence
-
-**MUST STORE** - Critical for recovery and debugging.
-
-| Data               | Stored? | Location                 |
-| ------------------ | ------- | ------------------------ |
-| Detection metadata | YES     | jobs.processing_metadata |
-
----
-
-## Post-Stage
-
-- Update DB: `lastCompletedStage = TYPE_DETECTED`
-- Store `processing_metadata` in jobs table
-
----
-
-## Failure Handling
-
-- If type cannot be detected → attempt generic parser
-- If all type detection fails → mark job FAILED
-
----
-
-# 7. Stage 4: Parsing
-
-## Overview
-
-Extracts structured fields from raw logs using detected parser.
-
----
-
-## Input
-
-- rawLines: `string[]`
-- detectionMetadata: Detection result from Stage 3
-
----
-
-## Execution
-
-- Apply detected parser strategy
-- Extract fields:
-  - timestamp
-  - log level
-  - message
-  - source IP
-  - user
-  - status code
-  - metadata
-
----
-
-## Output (In-Memory Only)
-
-```ts
-ParsedLog[]
-{
-  timestamp: Date,
-  logLevel: string,
-  message: string,
-  sourceIp?: string,
-  user?: string,
-  statusCode?: number,
-  raw: string
-}
-```
-
----
-
-## Persistence
-
-**DO NOT STORE** - Parsed logs are intermediate and parser-specific. Discard after normalization.
-
----
-
-## Post-Stage
-
-- Update DB: `lastCompletedStage = PARSED`
-
----
-
-## Failure Handling
-
-- If parsing fails:
-  - Retry with limited attempts
-  - If unrecoverable → mark FAILED
-
----
-
-# 8. Stage 5: Normalization
-
-## Overview
-
-Transforms parsed logs into a unified canonical schema. This is the **first major stable checkpoint**.
-
----
-
-## Input
-
-- ParsedLog[]
-- Parser metadata
-
----
-
-## Execution
-
-- Apply normalization rules
-- Unify field mappings
-- Standardize values:
-  - timestamp format (ISO8601)
-  - severity levels
-  - event types
-  - IP addresses
-  - user fields
-
----
-
-## Output
-
-```ts
-NormalizedLog[]
-{
-  id: UUID,
-  job_id: string,
-  timestamp: DateTime,
-  source: string,
-  event_type: string,
-  ip_address?: string,
-  severity: CRITICAL | HIGH | MEDIUM | LOW | INFO,
-  metadata: {
-    endpoint?: string,
-    statusCode?: number,
-    method?: string,
-    userAgent?: string,
-    userId?: string,
-    raw: string
-  }
-}
-```
-
----
-
-## Persistence
-
-**MUST STORE** - This is your **canonical processing layer**. Everything after this operates on normalized logs.
-
-| Data            | Stored? | Location              |
-| --------------- | ------- | --------------------- |
-| Normalized logs | YES     | normalized_logs table |
-
----
-
-## Post-Stage
-
-- Update DB: `lastCompletedStage = NORMALIZED`
-- Bulk insert into normalized_logs table
-
----
-
-## Failure Handling
-
-- Retry if transient
-- If schema validation fails → mark FAILED
-- Partial failures: log and continue if possible
-
----
-
-# 9. Stage 6: Analyzer Orchestrator
-
-## Overview
-
-Orchestrates multiple specialized analyzers. Each analyzer independently queries normalized logs.
-
----
-
-## Input
-
-- jobId
-- (Analyzers fetch normalized_logs by jobId internally)
-
----
-
-## Execution
-
-Analyzers run in defined sequence:
-
-### Rule Analyzer
-
-- Detect known threat patterns
-- Match against security rules
-
-### Type Analyzer
-
-- Apply log-type-specific rules
-- Extract domain patterns
-
-### Generic Analyzer
-
-- Fallback analysis for unknown patterns
-- Statistical detection
-
-### ML Analyzer (Parallel, Non-Blocking)
-
-- Send normalized logs to ML service
-- Runs asynchronously
-- Results merged on completion
-
----
-
-## Output
-
-```ts
-AnalyzerFinding[]
-{
-  id: UUID,
-  job_id: string,
-  analyzer: string,
-  finding_type: string,
-  severity: CRITICAL | HIGH | MEDIUM | LOW,
-  confidence: float (0-1),
-  log_references: [uuid, uuid, ...],  // References to normalized_logs
-  metadata: {
-    summary: string,
-    details: object,
-    recommendation?: string
-  },
-  created_at: DateTime
-}
-```
-
----
-
-## Persistence
-
-**MUST STORE** - Findings are expensive to compute and required for explainability and recovery.
-
-| Data              | Stored? | Location                |
-| ----------------- | ------- | ----------------------- |
-| Analyzer findings | YES     | analyzer_findings table |
-
----
-
-## Post-Stage
-
-- Update DB: `lastCompletedStage = ANALYZED`
-- Bulk insert into analyzer_findings table
-- Store findings with traceability to normalized_logs
-
----
-
-## Failure Handling
-
-- Partial failures allowed (individual analyzer failure doesn't stop pipeline)
-- ML failure → warning only, continue with other analyzers
-- If all analyzers fail → mark FAILED
-
----
-
-# 10. Stage 7: Insights Generation
-
-## Overview
-
-Converts analyzer findings into final human-readable insights. Uses **findings as input, not normalized logs directly**.
-
----
-
-## Input
-
-- AnalyzerFinding[]
-
----
-
-## Execution
-
-- Aggregate findings by type
-- Generate threat summary
-- Assign overall severity
-- Compile recommendations
-- Create human-readable descriptions
-
----
-
-## Output
-
-```ts
-Insight[]
-{
-  id: UUID,
-  job_id: string,
-  type: string,
-  title: string,
-  severity: CRITICAL | HIGH | MEDIUM | LOW,
-  data: {
-    summary: string,
-    affectedIps: string[],
-    threatCount: number,
-    findings: FindingReference[],
-    recommendation: string,
-    timestamp: DateTime
-  }
-}
-```
-
----
-
-## Persistence
-
-**MUST STORE** - Final user-facing intelligence.
-
-| Data     | Stored? | Location       |
-| -------- | ------- | -------------- |
-| Insights | YES     | insights table |
-
----
-
-## Post-Stage
-
-- Update DB: `lastCompletedStage = INSIGHTS_GENERATED`
-- Bulk insert into insights table
-
----
-
-## Failure Handling
-
-- Retry insights stage
-- If persistent failure → mark FAILED
-
----
-
-# 11. Stage 8: Store Results
-
-## Overview
-
-Finalizes job completion and updates status.
-
----
-
-## Execution
-
-- Verify all outputs exist
-- Calculate processing metrics
-- Generate completion summary
-
----
-
-## Persistence
-
-| Data               | Stored? | Location      |
-| ------------------ | ------- | ------------- |
-| Completion status  | YES     | jobs.status   |
-| Processing metrics | YES     | jobs.metadata |
-
----
-
-## Post-Stage
-
-- Update DB:
-  - `lastCompletedStage = COMPLETED`
-  - `status = COMPLETED` or `COMPLETED_WITH_WARNINGS`
-  - Store processing metrics
-
----
-
-# 12. Pipeline Context Object
-
-The runtime orchestration context that flows through stages:
-
-```ts
-interface PipelineContext {
-  // Core identifiers
-  jobId: string;
-  filePath: string;
-  userId: string;
-
-  // Stage outputs (NOT ALL PERSISTED)
-  rawLines?: string[];
-  detection?: DetectionResult;
-  parsedLogs?: ParsedLog[];
-  normalizedLogs?: NormalizedLog[];
-  findings?: AnalyzerFinding[];
-  insights?: Insight[];
-
-  // Metadata
-  processing_metadata?: ProcessingMetadata;
-  metrics?: ProcessingMetrics;
-  currentStage: PipelineStage;
-  startedAt: DateTime;
-}
-```
-
-**IMPORTANT**: Not everything in context gets persisted. Context is for runtime orchestration only.
-
----
-
-# 13. Persistence Strategy
-
-## Transient Data (NOT Stored)
-
-Never persists—discarded after use:
-
-- Raw line arrays
-- Regex match results
-- Parsed intermediate objects
-- Temporary counters
-- Chunk buffers
-- Encoding detection state
-
----
-
-## Persistent Recovery Data (MUST Store)
-
-Essential for recovery and debugging:
-
-- `jobs.processing_metadata` → Detection result, parser info, encoding
-- `normalized_logs` → Canonical layer, reusable by all downstream stages
-- `analyzer_findings` → Expensive computations, explainability
-- Pipeline checkpoints → Stage completion times
-
----
-
-## Final User Output Data (MUST Store)
-
-- `insights` → User-facing intelligence
-- Severity assignments
-- Threat summaries
-- Recommendations
-
 ---
 
-# 14. Storage Map
+### Stage 2: Ingest & Clean (Preprocess)
+* **Why it happens**: Cleans and structure-validates raw lines to prevent parser exceptions. It detects the text encoding (defaulting to UTF-8 if unknown), sanitizes empty strings, and trims whitespace.
+* **Input**: `jobId`, `filePath`.
+* **Execution**: Reads file in chunks, splits into strings, performs sanitization.
+* **Output (In-Memory)**: `rawLines: string[]`, metadata (`encoding`, `lineCount`).
+* **Persistence**: None. Kept in memory to optimize processing performance.
 
-What gets stored at each stage:
-
-| Stage          | Save to DB? | Where                    | Data                                        |
-| -------------- | ----------- | ------------------------ | ------------------------------------------- |
-| Upload         | YES         | jobs                     | job record, file path                       |
-| Preprocess     | NO          | —                        | transient only                              |
-| Type Detection | YES         | jobs.processing_metadata | detected type, parser, confidence, encoding |
-| Parse          | NO          | —                        | transient only (parsed logs)                |
-| Normalize      | YES         | normalized_logs          | canonical log records with metadata         |
-| Analyze        | YES         | analyzer_findings        | findings with log references                |
-| Insights       | YES         | insights                 | final insights for user                     |
-| Store Results  | YES         | jobs                     | status, completion metadata                 |
-
 ---
-
-# 15. Recovery Boundaries
 
-If pipeline fails, resume from appropriate stage:
+### Stage 3: Format Baseline (Type Detection)
+* **Why it happens**: Dynamically identifies the log format (e.g. `NGINX_ACCESS`, `SYSLOG`, `JSON`, `GENERIC`) based on pattern matching of the first batch. This ensures the correct parsing regular expressions are applied.
+* **Input**: Initial batch of `rawLines`.
+* **Execution**: Runs line pattern tests to calculate format confidence scores.
+* **Output**: `detectedType` (e.g. `NGINX_ACCESS`), `confidence`, `parser`.
+* **Persistence**: Saved in `jobs.processing_metadata`.
 
-| Failure Point                         | Recovery Strategy    | Action                               |
-| ------------------------------------- | -------------------- | ------------------------------------ |
-| Before Normalization                  | Restart from Parsing | Re-parse with detected parser        |
-| After Normalization (Before Analysis) | Resume from Analyzer | Reuse normalized_logs, no re-parsing |
-| After Analysis (Before Insights)      | Regenerate Insights  | Reuse analyzer_findings              |
-| After Insights                        | Mark COMPLETED       | No recovery needed                   |
-
 ---
-
-# 16. Checkpointing System
-
-Each stage updates the DB only after successful completion.
-
-### Checkpoint Record
 
-```json
-{
-  "jobId": "uuid",
-  "lastCompletedStage": "NORMALIZED",
-  "completedAt": "2024-01-15T10:30:00Z",
-  "stageDurations": {
-    "UPLOADED": 100,
-    "PREPROCESSED": 250,
-    "TYPE_DETECTED": 50,
-    "PARSED": 1200,
-    "NORMALIZED": 800
-  }
-}
-```
+### Stage 4: Structure Extraction (Parsing)
+* **Why it happens**: Translates raw strings into structured JSON objects by applying regex rules.
+* **Input**: Sanitized `rawLines`, `detectedType` configuration.
+* **Execution (Adaptive Loop)**:
+  * Applies the detected parser rules.
+  * If the parser fails to process more than 85% of lines, SentinelX initiates **Dynamic Re-Detection** on the failing batch, excluding the current parser type.
+  * It attempts the new parser format; if failure persists across multiple retries, it forces a **GENERIC** parser fallback rather than failing the job.
+* **Output (In-Memory)**: `ParsedLog[]` containing timestamps, levels, log messages, IPs, and actors.
+* **Persistence**: None.
 
-**CRITICAL**: Only update `lastCompletedStage` after stage outputs are fully validated and persisted.
-
 ---
-
-# 17. Idempotency Strategy
-
-Each stage implements idempotency:
-
-1. **Check if stage already completed** → Skip if outputs exist and validated
-2. **Validate existing outputs** → Verify integrity
-3. **Re-run only if validation fails**
-
-This ensures:
 
-- Workers can retry without duplicating data
-- Pipeline handles duplicate queue messages
-- Partial failures can be recovered cleanly
+### Stage 5: Canonical Unification (Normalization)
+* **Why it happens**: Maps parser-specific attributes into a unified canonical schema so that down-stream security scanners can run rules against standard formats.
+* **Input**: `ParsedLog[]`.
+* **Execution**: Standardizes times to ISO 8601, maps IP addresses, sets uniform severity terms (`INFO`, `WARNING`, `ERROR`), and converts extra details to a JSONB `metadata` field.
+* **Output**: `NormalizedLog[]` records ready for PostgreSQL.
+* **Persistence**: Bulk-inserted into the `normalized_logs` table.
+* **Checkpoint Boundary**: Once complete, the database updates:
+  * `last_completed_stage = NORMALIZED`
+  * Progress updated to `40%`.
 
 ---
 
-# 18. Recovery Mechanism
+### Stage 6: Threat Scanning (Analysis Orchestrator)
+* **Why it happens**: Executes parallel threat rules, behavior scanners, and machine learning models on normalized logs to identify malicious patterns.
+* **Input**: `jobId` (scanners query `normalized_logs` internally).
+* **Execution**: To limit RAM footprint on large files, logs are processed in **sliding windows** of 5,000 logs with a 500-log overlap to catch boundary attacks. 5 engines run in parallel on each window:
+  1. **Rule Analyzer**: Matches regex indicators (SQL injection, XSS).
+  2. **Statistical Analyzer**: Calculates distribution variances.
+  3. **Temporal Analyzer**: Scans login timings.
+  4. **Correlation Analyzer**: Detects multi-stage alert correlations.
+  5. **ML Analyzer**: Encodes features and calls the FastAPI microservice (`/analyze` endpoint) to run Isolation Forest & DBSCAN.
+* **Deduplication**: As overlapping windows cause duplicate findings, a SHA-256 fingerprint is generated from: `analyzer + finding_type + affected_entities + first_10_log_references`. Duplicate inserts are rejected.
+* **Output**: `AnalyzerFinding[]`.
+* **Persistence**: Bulk-inserted into the `analyzer_findings` table.
+* **Checkpoint Boundary**: Once complete, the database updates:
+  * `last_completed_stage = ANALYZED`
+  * Progress updated to `70%`.
 
-### Scenario: Worker Crash During Stage 5 (Normalization)
-
-1. Job marked as IN_PROGRESS
-2. Worker dies
-3. Next worker picks up same jobId
-4. Reads: `lastCompletedStage = PARSED`
-5. **Resume from Stage 4 (Parse)**, not from beginning
-
 ---
 
-### Scenario: Partial Failure in Analyzer Stage
+### Stage 7: Aggregation (Insights Generation)
+* **Why it happens**: Translates granular, complex `analyzer_findings` into human-digestible widgets, severity counts, attack timelines, and recommendations.
+* **Input**: `analyzer_findings` linked to the `jobId`.
+* **Execution**: Groups findings by severity and type, computes attacker IP lists, and creates visual chart datasets.
+* **Output**: `Insight[]` objects.
+* **Persistence**: Saved into the `insights` table.
+* **Checkpoint Boundary**: Once complete, the database updates:
+  * `last_completed_stage = INSIGHTS_GENERATED`
+  * Progress updated to `100%`.
 
-1. Rule Analyzer succeeds → persist findings
-2. ML Analyzer fails
-3. Do NOT fail entire job
-4. Continue with insights generation using partial findings
-5. Mark status: `COMPLETED_WITH_WARNINGS`
-
 ---
-
-# 19. End-to-End Flow Summary
 
-```text
-Job picked
-  → Resume from lastCompletedStage
-  → Check stage pre-conditions
-  → Execute stage
-  → Validate outputs
-  → Persist to DB
-  → Update checkpoint
-  → Next stage
-```
+### Stage 8: Compilation (Store Results)
+* **Why it happens**: Transition the job to a static completed status and log execution duration metrics.
+* **Execution**: Updates job health state.
+* **Persistence**:
+  * `status = COMPLETED`
+  * `outcome = SUCCESS` (or `WARNING` if ML service was offline).
 
 ---
 
-# 20. Critical Data Flow Layers
+## 4. Storage & Persistence Map
 
-```
-RAW_LOGS (transient)
-    ↓
-PARSED_LOGS (transient)
-    ↓
-NORMALIZED_LOGS (canonical—persistent) ← All analyzers query from here
-    ↓
-ANALYZER_FINDINGS (persistent—explains detections)
-    ↓
-INSIGHTS (persistent—user-facing)
-```
+| Step / Stage | Stored to DB? | Target Table | Type | Purpose |
+| :--- | :--- | :--- | :--- | :--- |
+| **Upload** | YES | `jobs` | Permanent | Tracks file location and status. |
+| **Preprocess** | NO | — | Transient | In-memory cleaning only. |
+| **Type Detect** | YES | `jobs.processing_metadata` | Permanent | Saves identified log parser type. |
+| **Parse** | NO | — | Transient | Structural logs. |
+| **Normalize** | YES | `normalized_logs` | Permanent | Unified data source for analyzers. |
+| **Analyze** | YES | `analyzer_findings` | Permanent | Security alerts and ML outliers. |
+| **Insights** | YES | `insights` | Permanent | Dashboard widgets and summaries. |
+| **Store Results** | YES | `jobs` | Permanent | Finalizes status to `COMPLETED`. |
 
-**Key insight**: Everything after normalization operates on stable, persistent data.
-
 ---
-
-# 21. Schema Requirements
 
-### Required Additions to Prisma Schema
+## 5. Recovery Boundaries and Fault Tolerance
 
-```prisma
-model jobs {
-  // ... existing fields
+If a queue worker crashes or the server loses power during execution, the system recovers cleanly by reading `last_completed_stage` at job restart:
 
-  // NEW: Processing metadata for recovery
-  processing_metadata Json?  // Detection result, parser, confidence, encoding
+| Failure Location | Saved State | Recovery Strategy | Action |
+| :--- | :--- | :--- | :--- |
+| Before Normalization | `UPLOADED` or `null` | Full restart | Wipes partial log database records and re-runs parsing. |
+| During Analysis | `NORMALIZED` | Resume at Scan | Skips parsing/normalization; queries existing `normalized_logs` and executes scanners. |
+| During Insights | `ANALYZED` | Resume at Aggregate | Skips parsing/analysis; queries existing `analyzer_findings` to compile insights. |
+| After Insights | `INSIGHTS_GENERATED` | Finalize | Marks status as `COMPLETED`. |
 
-  // NEW: Track last successful stage
-  last_completed_stage String
-}
+### Idempotency Strategy
+To avoid duplicate data inserts during job retries:
+1. **Normalization Stage**: Deletes any pre-existing records in `normalized_logs` matching the current `jobId` before inserting.
+2. **Analysis Stage**: Deletes any pre-existing records in `analyzer_findings` matching the current `jobId` before inserting.
+3. **Insights Stage**: Deletes any pre-existing records in `insights` matching the current `jobId` before generating new ones.
 
-model analyzer_findings {
-  // NEW TABLE: Required for explainability and recovery
-  id                 String   @id @default(uuid())
-  job_id             String
-  analyzer           String   // "rule", "type", "generic", "ml"
-  finding_type       String
-  severity           String   // CRITICAL | HIGH | MEDIUM | LOW
-  confidence         Float?
-  log_references     Json?    // IDs of related normalized_logs
-  metadata           Json?    // Details, summary, recommendation
-  created_at         DateTime @default(now())
-
-  @@foreignKey([job_id], references: [jobs.id])
-}
-```
-
 ---
-
-# 22. Final Notes
 
-This revised pipeline architecture ensures:
+## 6. Database Schema Alignment
 
-- **Fault tolerance** through checkpoint-based recovery
-- **Explainability** via analyzer_findings layer
-- **Scalability** by not persisting transient data
-- **Idempotency** through stage validation
-- **Modularity** with clear input/output contracts
-- **Proper data boundaries** between transient, recovery, and user data
+The pipeline data structure is mapped directly to PostgreSQL using the Prisma client. The models (`users`, `jobs`, `normalized_logs`, `analyzer_findings`, and `insights`) are detailed in the [Database Schema & Data Dictionary](file:///d:/CodingContent/Web%20Development/SentinelX%20%E2%80%94%20Smart%20Intrusion%20Detection%20System/documentation/backend-data-layer/Database%20Schema%20&%20Data%20Dictionary.md) document. 
 
-The canonical layer (normalized_logs) becomes the stable foundation that all subsequent processing relies on.
+All tables are optimized with indexing on query filters (e.g. `job_id`, `timestamp`, `ip_address`, and `fingerprint`) to guarantee sub-second API responses.
