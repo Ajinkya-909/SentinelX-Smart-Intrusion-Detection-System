@@ -23,13 +23,13 @@ export const privilegeEscalationDetector: IDetector = {
 
       // 2. System-based Escalation (Linux sudo / Windows Event 4672)
       const message = log.message?.toLowerCase();
-      if (log.log_type === "SYSLOG" && message && message.includes("sudo") && message.includes("incorrect password")) {
+      if (log.source === "SYSLOG" && message && message.includes("sudo") && message.includes("incorrect password")) {
         isEscalationAttempt = true;
         context = "Failed sudo command attempt in syslog";
       }
       
       // Windows specific: Event ID 4672 (Special privileges assigned to new logon)
-      if (log.log_type === "WINDOWS_EVENT" && log.metadata?.parserMetadata?.EventID === 4672) {
+      if (log.source === "WINDOWS_EVENT" && log.metadata?.parserMetadata?.EventID === 4672) {
         isEscalationAttempt = true;
         context = "Windows Special Privileges Assigned (Event 4672)";
       }

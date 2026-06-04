@@ -35,39 +35,56 @@ export interface PreprocessingConfig {
 // ================================================
 
 export class PreprocessorService {
-  private createFileStream(filePath: string): fs.ReadStream {
-    logger.info(`[PREPROCESS] Opening file stream: ${filePath}`);
+  private createFileStream(filePath: string, encoding: string): fs.ReadStream {
+    logger.info(`[PREPROCESS] Opening file stream: ${filePath} with encoding: ${encoding}`);
 
     if (!fs.existsSync(filePath)) {
       throw new Error(`File not found: ${filePath}`);
     }
 
     return fs.createReadStream(filePath, {
-      encoding: "utf8",
+      encoding: encoding as BufferEncoding,
       highWaterMark: 64 * 1024,
     });
   }
 
   private async detectEncoding(filePath: string): Promise<string> {
-    const fileBuffer = await fsPromises.readFile(filePath);
+    let fileHandle: fsPromises.FileHandle | null = null;
+    try {
+      fileHandle = await fsPromises.open(filePath, "r");
+      const buffer = Buffer.alloc(4);
+      const { bytesRead } = await fileHandle.read(buffer, 0, 4, 0);
 
-    // Check for BOM (Byte Order Mark)
-    if (
-      fileBuffer[0] === 0xef &&
-      fileBuffer[1] === 0xbb &&
-      fileBuffer[2] === 0xbf
-    ) {
+      if (bytesRead < 2) {
+        return "utf8";
+      }
+
+      // Check for BOM (Byte Order Mark)
+      if (
+        bytesRead >= 3 &&
+        buffer[0] === 0xef &&
+        buffer[1] === 0xbb &&
+        buffer[2] === 0xbf
+      ) {
+        return "utf8";
+      }
+
+      if (
+        (buffer[0] === 0xff && buffer[1] === 0xfe) ||
+        (buffer[0] === 0xfe && buffer[1] === 0xff)
+      ) {
+        return "utf16le";
+      }
+
       return "utf8";
+    } catch (error) {
+      logger.error(`[PREPROCESS] Error detecting encoding for ${filePath}:`, error);
+      return "utf8";
+    } finally {
+      if (fileHandle) {
+        await fileHandle.close();
+      }
     }
-
-    if (
-      (fileBuffer[0] === 0xff && fileBuffer[1] === 0xfe) ||
-      (fileBuffer[0] === 0xfe && fileBuffer[1] === 0xff)
-    ) {
-      return "utf16le";
-    }
-
-    return "utf8";
   }
 
   private createLineReader(stream: fs.ReadStream): readline.Interface {
@@ -109,7 +126,7 @@ export class PreprocessorService {
     const maxLineLength = config.maxLineLengthBytes || 100 * 1024;
 
     const encoding = await this.detectEncoding(filePath);
-    const fileStream = this.createFileStream(filePath);
+    const fileStream = this.createFileStream(filePath, encoding);
     const lineReader = this.createLineReader(fileStream);
 
     let batchNumber = 0;

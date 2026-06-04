@@ -31,9 +31,26 @@ interface GeoAnalysisInsightData {
 
 interface GeoAnalysisMapProps {
   data: GeoAnalysisInsightData;
+  colorMode?: 'default' | 'primaryShades';
+  mapScale?: number;
+  mapCenter?: [number, number];
 }
 
-const getSeverityColor = (severity: string) => {
+const getSeverityColor = (severity: string, colorMode?: 'default' | 'primaryShades') => {
+  if (colorMode === 'primaryShades') {
+    switch (severity.toUpperCase()) {
+      case 'CRITICAL':
+        return 'hsl(84, 100%, 65%)';
+      case 'HIGH':
+        return 'hsl(84, 100%, 50%)';
+      case 'MEDIUM':
+        return 'hsl(84, 85%, 38%)';
+      case 'LOW':
+        return 'hsl(84, 60%, 26%)';
+      default:
+        return 'hsl(210, 12%, 14%)';
+    }
+  }
   switch (severity.toUpperCase()) {
     case 'CRITICAL':
       return 'hsl(var(--critical))';
@@ -48,7 +65,21 @@ const getSeverityColor = (severity: string) => {
   }
 };
 
-const getSeverityBadgeClass = (severity: string) => {
+const getSeverityBadgeClass = (severity: string, colorMode?: 'default' | 'primaryShades') => {
+  if (colorMode === 'primaryShades') {
+    switch (severity.toUpperCase()) {
+      case 'CRITICAL':
+        return 'bg-[hsl(84,100%,65%)]/10 text-[hsl(84,100%,65%)] border-[hsl(84,100%,65%)]/20';
+      case 'HIGH':
+        return 'bg-[hsl(84,100%,50%)]/10 text-[hsl(84,100%,50%)] border-[hsl(84,100%,50%)]/20';
+      case 'MEDIUM':
+        return 'bg-[hsl(84,85%,38%)]/10 text-[hsl(84,85%,38%)] border-[hsl(84,85%,38%)]/20';
+      case 'LOW':
+        return 'bg-[hsl(84,60%,26%)]/10 text-[hsl(84,60%,26%)] border-[hsl(84,60%,26%)]/20';
+      default:
+        return 'bg-muted/10 text-muted border-border';
+    }
+  }
   switch (severity.toUpperCase()) {
     case 'CRITICAL':
       return 'bg-critical/10 text-critical border-critical/20';
@@ -265,9 +296,21 @@ const matchCountry = (apiCountry: string, geoName: string): boolean => {
   
   return false;
 };
-export const GeoAnalysisMap: React.FC<GeoAnalysisMapProps> = ({ data }) => {
+export const GeoAnalysisMap: React.FC<GeoAnalysisMapProps> = ({
+  data,
+  colorMode = 'default',
+  mapScale = 140,
+  mapCenter = [0, 20],
+}) => {
   const [expandedCountry, setExpandedCountry] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Closed by default
+  const [tooltip, setTooltip] = useState<{
+    x: number;
+    y: number;
+    content: string;
+    subcontent?: string;
+    severity?: string;
+  } | null>(null);
 
   const toggleCountry = (countryName: string) => {
     if (expandedCountry === countryName) {
@@ -323,13 +366,13 @@ const matchCountry = (apiCountry: string, geoName: string): boolean => {
         {/* Map Vector (Fills full section width & height) */}
         <div className="w-full h-full flex items-center justify-center relative bg-secondary/10 overflow-hidden">
           <ComposableMap
-            projectionConfig={{ scale: 140 }}
+            projectionConfig={{ scale: mapScale }}
             width={800}
             height={400}
             style={{ width: '100%', height: '100%' }}
           >
             <ZoomableGroup
-              center={[0, 20]}
+              center={mapCenter}
               minZoom={1}
               maxZoom={6}
             >
@@ -351,7 +394,7 @@ const matchCountry = (apiCountry: string, geoName: string): boolean => {
                         geography={geo}
                         fill={
                           matchedData
-                            ? getSeverityColor(matchedData.severity)
+                            ? getSeverityColor(matchedData.severity, colorMode)
                             : 'hsl(var(--secondary))'
                         }
                         stroke="hsl(var(--border))"
@@ -360,13 +403,37 @@ const matchCountry = (apiCountry: string, geoName: string): boolean => {
                           default: { outline: 'none', transition: 'all 300ms ease' },
                           hover: {
                             fill: matchedData
-                              ? getSeverityColor(matchedData.severity)
+                              ? getSeverityColor(matchedData.severity, colorMode)
                               : 'hsl(var(--muted))',
                             filter: matchedData ? 'brightness(1.15) saturate(1.1)' : 'brightness(1.08)',
                             outline: 'none',
                             cursor: matchedData ? 'pointer' : 'default',
                           },
                           pressed: { outline: 'none' },
+                        }}
+                        onMouseEnter={(event) => {
+                          const displayName = matchedData ? matchedData.country : countryName;
+                          setTooltip({
+                            x: event.clientX,
+                            y: event.clientY,
+                            content: displayName,
+                            subcontent: matchedData ? `${matchedData.request_count} requests` : undefined,
+                            severity: matchedData ? matchedData.severity : undefined,
+                          });
+                        }}
+                        onMouseMove={(event) => {
+                          setTooltip((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  x: event.clientX,
+                                  y: event.clientY,
+                                }
+                              : null
+                          );
+                        }}
+                        onMouseLeave={() => {
+                          setTooltip(null);
                         }}
                       />
                     );
@@ -394,7 +461,7 @@ const matchCountry = (apiCountry: string, geoName: string): boolean => {
               {data.countries.map((c, index) => {
                 const isExpanded = expandedCountry === c.country;
                 const hasRegions = c.regions && c.regions.length > 0;
-                const badgeClass = getSeverityBadgeClass(c.severity);
+                const badgeClass = getSeverityBadgeClass(c.severity, colorMode);
 
                 return (
                   <div
@@ -460,7 +527,7 @@ const matchCountry = (apiCountry: string, geoName: string): boolean => {
                                 </span>
                                 <span
                                   className="w-1.5 h-1.5 rounded-full"
-                                  style={{ backgroundColor: getSeverityColor(r.severity) }}
+                                  style={{ backgroundColor: getSeverityColor(r.severity, colorMode) }}
                                 />
                               </div>
                             </div>
@@ -486,6 +553,28 @@ const matchCountry = (apiCountry: string, geoName: string): boolean => {
           </div>
         </div>
       </div>
+      {tooltip && (
+        <div
+          className="fixed z-50 pointer-events-none bg-background/95 border border-border/80 px-3 py-2 rounded-lg shadow-xl backdrop-blur-md text-xs font-mono flex flex-col gap-0.5"
+          style={{
+            top: tooltip.y + 15,
+            left: tooltip.x + 15,
+          }}
+        >
+          <div className="font-bold text-foreground">{tooltip.content}</div>
+          {tooltip.subcontent && (
+            <div className="text-muted-foreground flex items-center gap-1.5 mt-0.5">
+              <span>{tooltip.subcontent}</span>
+              {tooltip.severity && (
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: getSeverityColor(tooltip.severity, colorMode) }}
+                />
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
