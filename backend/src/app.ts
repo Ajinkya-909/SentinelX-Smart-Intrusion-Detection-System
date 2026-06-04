@@ -34,4 +34,16 @@ app.get("/", (req, res) => {
   res.send("Welcome to SentinelX");
 });
 
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    success: true,
+    statusCode: 200,
+    message: "Server is live",
+    data: {
+      status: "healthy",
+      timestamp: new Date().toISOString(),
+    },
+  });
+});
+
 export default app;

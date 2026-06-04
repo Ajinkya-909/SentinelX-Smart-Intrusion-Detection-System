@@ -23,6 +23,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Navbar } from "@/components/landing/Navbar";
 
 const mockGeoData = {
   total_requests: 1690,
@@ -348,6 +349,7 @@ Failure Information:
 
   return (
     <div className="min-h-screen bg-[#040811] text-foreground overflow-x-hidden selection:bg-primary/30">
+      <Navbar />
       {/* Styles for interactive threat map connection lines */}
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes flow {
@@ -384,7 +386,7 @@ Failure Information:
       </div>
 
       {/* HERO & LIVE MAP SECTION */}
-      <section className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-16 z-10">
+      <section className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 pb-16 z-10">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           
           {/* Left Text */}
@@ -403,19 +405,30 @@ Failure Information:
               An enterprise-grade, asynchronous log pipeline engineered to ingest, normalize, and audit logs. Detect threats concurrently across 5 analytic engines backed by machine learning models and AI.
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4">
-              <Button
-                size="lg"
-                className="bg-primary hover:bg-primary/95 text-primary-foreground font-bold tracking-wide rounded-lg flex items-center gap-2 transition-all duration-300 transform hover:scale-[1.02] shadow-[0_0_15px_rgba(132,255,13,0.2)]"
-                onClick={() => navigate("/login")}
-              >
-                Launch Console
-                <ArrowRight className="w-4 h-4" />
-              </Button>
+            <div className="flex flex-col gap-4 max-w-lg w-full">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Button
+                  size="lg"
+                  className="flex-1 bg-primary hover:bg-primary/95 text-primary-foreground font-bold tracking-wide rounded-lg flex items-center justify-center gap-2 transition-all duration-300 transform hover:scale-[1.01] shadow-[0_0_15px_rgba(132,255,13,0.2)]"
+                  onClick={() => navigate("/login")}
+                >
+                  Launch Console
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="flex-1 border-border hover:border-primary/50 hover:bg-primary/5 hover:text-primary text-foreground font-semibold rounded-lg flex items-center justify-center gap-2 transition-all duration-300 transform hover:scale-[1.01]"
+                  onClick={() => navigate("/public/jobresult")}
+                >
+                  <Eye className="w-4 h-4 text-primary" />
+                  View Live Demo
+                </Button>
+              </div>
               <Button
                 size="lg"
                 variant="outline"
-                className="border-border hover:bg-muted text-foreground font-semibold rounded-lg"
+                className="w-full border-border/80 hover:border-white/20 bg-secondary/10 hover:bg-secondary/30 text-muted-foreground hover:text-foreground font-semibold rounded-lg flex items-center justify-center gap-2 transition-all duration-300 transform hover:scale-[1.005]"
                 onClick={() => {
                   const element = document.getElementById("pipeline-section");
                   element?.scrollIntoView({ behavior: "smooth" });
@@ -567,7 +580,7 @@ Failure Information:
       </section>
 
       {/* DETECTOR ENGINES SPECIFICATIONS */}
-      <section className="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+      <section id="engines-section" className="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         
         <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
           <div className="inline-flex items-center gap-1.5 text-accent text-xs font-mono font-bold tracking-widest uppercase">
@@ -659,7 +672,7 @@ Failure Information:
       </section>
 
       {/* LOG FORMAT PREVIEW GRID */}
-      <section className="py-20 relative z-10 border-t border-border/30 bg-[#060c1c]/40">
+      <section id="formats-section" className="py-20 relative z-10 border-t border-border/30 bg-[#060c1c]/40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           
           <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">

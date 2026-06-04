@@ -18,6 +18,7 @@ import ColorPalette from "./pages/ColorPalette";
 import JobDetail from "./pages/JobDetail";
 import JobResultDashboard from "./pages/JobResultDashboard";
 import JobUpload from "./pages/JobUpload";
+import PublicJobResultDashboard from "./pages/PublicJobResultDashboard";
 
 const queryClient = new QueryClient();
 
@@ -51,6 +52,15 @@ const App = () => (
               element={
                 <PublicRoute redirectIfAuthenticated>
                   <Signup />
+                </PublicRoute>
+              }
+            />
+
+            <Route
+              path="/public/jobresult"
+              element={
+                <PublicRoute>
+                  <PublicJobResultDashboard />
                 </PublicRoute>
               }
             />
