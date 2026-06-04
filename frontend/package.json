@@ -1,7 +1,17 @@
 {
   "name": "sentinelx-ids",
-  "private": true,
+  "private": false,
   "version": "1.0.0",
+  "author": "Ajinkya Deshmukh <ajinkyadeshmukh8686@gmail.com> (https://github.com/Ajinkya-909)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ajinkya-909/SentinelX-Smart-Intrusion-Detection-System.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ajinkya-909/SentinelX-Smart-Intrusion-Detection-System/issues"
+  },
+  "homepage": "https://github.com/Ajinkya-909/SentinelX-Smart-Intrusion-Detection-System#readme",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -1,5 +1,9 @@
 """
 FastAPI application entry point for ML service.
+
+Author: Ajinkya Deshmukh <ajinkyadeshmukh8686@gmail.com> (https://github.com/Ajinkya-909)
+License: MIT
+Copyright (c) 2026 Ajinkya Deshmukh
 """
 
 from fastapi import FastAPI

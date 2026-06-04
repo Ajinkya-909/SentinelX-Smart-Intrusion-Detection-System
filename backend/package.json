@@ -13,8 +13,16 @@
   "keywords": [
     "backend"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "Ajinkya Deshmukh <ajinkyadeshmukh8686@gmail.com> (https://github.com/Ajinkya-909)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ajinkya-909/SentinelX-Smart-Intrusion-Detection-System.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ajinkya-909/SentinelX-Smart-Intrusion-Detection-System/issues"
+  },
+  "homepage": "https://github.com/Ajinkya-909/SentinelX-Smart-Intrusion-Detection-System#readme",
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
