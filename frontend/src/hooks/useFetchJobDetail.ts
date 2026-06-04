@@ -32,11 +32,11 @@ export const useFetchJobDetail = (jobId: string): UseFetchJobDetailReturn => {
    * Fetch full job details
    * Called on component mount and after actions (retry, reanalyze)
    */
-  const fetchJobDetail = useCallback(async (): Promise<void> => {
+  const fetchJobDetail = useCallback(async (showLoader = true): Promise<void> => {
     if (!jobId) return;
 
     try {
-      setIsLoading(true);
+      if (showLoader) setIsLoading(true);
       setError(null);
 
       const jobData = await jobDetailService.fetchJobDetail(jobId);
@@ -47,7 +47,7 @@ export const useFetchJobDetail = (jobId: string): UseFetchJobDetailReturn => {
       setIsLoading(false);
 
       // Determine if we need to start polling
-      if (jobData.status === "PROCESSING") {
+      if (jobData.status === "UPLOADED" || jobData.status === "PROCESSING") {
         setIsPolling(true);
       } else {
         setIsPolling(false);
@@ -101,12 +101,18 @@ export const useFetchJobDetail = (jobId: string): UseFetchJobDetailReturn => {
             statusData.lastCompletedStage !== undefined
               ? statusData.lastCompletedStage
               : prevJob.lastCompletedStage,
+
+          updatedAt:
+            statusData.updatedAt !== undefined
+              ? statusData.updatedAt
+              : prevJob.updatedAt,
         };
       });
 
-      // Stop polling if job is no longer processing
+      // Stop polling if job is no longer processing, and fetch full final job detail
       if (statusData.status === "COMPLETED" || statusData.status === "FAILED") {
         setIsPolling(false);
+        fetchJobDetail(false);
       }
     } catch (err) {
       if (!isMountedRef.current) return;
@@ -118,11 +124,11 @@ export const useFetchJobDetail = (jobId: string): UseFetchJobDetailReturn => {
       // Don't stop polling on error - continue trying
       // (user might have lost connection temporarily)
     }
-  }, [jobId]);
+  }, [jobId, fetchJobDetail]);
 
   /**
    * Manage polling interval
-   * Starts polling when job is PROCESSING, stops otherwise
+   * Starts polling when job is UPLOADED/PROCESSING, stops otherwise
    */
   useEffect(() => {
     if (!isPolling || !jobId) {
@@ -134,10 +140,10 @@ export const useFetchJobDetail = (jobId: string): UseFetchJobDetailReturn => {
       return;
     }
 
-    // Start polling with 3-second interval
+    // Start polling with 2-second interval
     pollingIntervalRef.current = setInterval(() => {
       pollStatus();
-    }, 3000);
+    }, 2000);
 
     return () => {
       if (pollingIntervalRef.current) {

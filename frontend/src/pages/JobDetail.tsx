@@ -20,6 +20,7 @@ export default function JobDetail() {
     isLoading,
     error: fetchError,
     isPolling,
+    refetch,
   } = useFetchJobDetail(id!);
   
   const {
@@ -86,7 +87,10 @@ export default function JobDetail() {
         <JobCompleted 
           job={job} 
           actions={{
-            handleReanalyze: () => handleReanalyze(job.jobId),
+            handleReanalyze: async () => {
+              await handleReanalyze(job.jobId);
+              refetch();
+            },
             handleDownload: () => handleDownload(job.jobId, job.fileName),
             handleReport: () => navigate(`/jobs/${id}/report`),
             handleDeleteClick: () => setShowDeleteModal(true)
@@ -121,7 +125,10 @@ export default function JobDetail() {
             
             <div className="flex gap-4">
               <button
-                onClick={() => handleRetry(job.jobId)}
+                onClick={async () => {
+                  await handleRetry(job.jobId);
+                  refetch();
+                }}
                 disabled={retryState.isLoading || isAnyLoading}
                 className="flex items-center gap-2 bg-destructive text-destructive-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed px-6 py-3 rounded-md transition-colors font-mono font-bold uppercase tracking-wider text-xs"
               >

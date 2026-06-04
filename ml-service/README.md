@@ -16,7 +16,7 @@ pip install -r requirements.txt
 ```bash
 python main.py
 ```
- 
+
 Or using Uvicorn directly:
 
 ```bash

@@ -66,8 +66,16 @@ export const jobDetailService = {
    * @returns - Current job status and progress
    */
   async pollJobStatus(jobId: string): Promise<JobStatus> {
-    const response = await api.get<JobStatus>(`/jobs/${jobId}/status`);
-    return response.data;
+    const response = await api.get<any>(`/jobs/${jobId}/status`);
+    const data = response.data;
+    return {
+      jobId: data.jobId,
+      status: data.status,
+      lastCompletedStage: data.currentStage,
+      progress: data.progress,
+      errorMessage: data.error,
+      updatedAt: data.lastUpdated,
+    };
   },
 
   /**
