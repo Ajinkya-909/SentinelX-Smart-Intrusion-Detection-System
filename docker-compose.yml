@@ -79,6 +79,7 @@ services:
     depends_on:
       - postgres-db
       - redis
+      - ml-service
     volumes:
       - sentinelx_storage:/app/storage
     networks:

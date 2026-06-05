@@ -45,9 +45,8 @@ class IsolationForestService:
             predictions = isolation_forest_model.predict(X_scaled)
             scores = isolation_forest_model.score_samples(X_scaled)
             
-            # Convert to 0-1 anomaly scale (sklearn uses -1 to 0+)
-            anomaly_scores = 1.0 - scores  # Invert: higher = more anomalous
-            anomaly_scores = np.clip(anomaly_scores, 0, 1)
+            # Use scores directly (model wrapper already scales 0-1 with higher = more anomalous)
+            anomaly_scores = np.clip(scores, 0, 1)
             
             # Build results
             results = []

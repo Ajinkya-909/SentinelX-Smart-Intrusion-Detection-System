@@ -95,8 +95,8 @@ class FeatureVector(BaseModel):
     timestamp: Optional[str] = None
     jobId: Optional[str] = None
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "entity": "ip:192.168.1.1",
                 "requestCount": 450,
@@ -109,6 +109,7 @@ class FeatureVector(BaseModel):
                 "jobId": "job-123"
             }
         }
+    }
 
 
 class AnalysisRequest(BaseModel):
@@ -119,8 +120,8 @@ class AnalysisRequest(BaseModel):
         description="Optional model configuration (contamination, eps, minSamples)"
     )
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "vectors": [
                     {
@@ -136,3 +137,4 @@ class AnalysisRequest(BaseModel):
                 }
             }
         }
+    }

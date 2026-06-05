@@ -49,6 +49,13 @@ export function getPrisma(): PrismaClient {
   return globalForPrisma.prisma ?? prisma;
 }
 
-// For backwards compatibility, try to export a prisma instance
-// This will throw if initializePrisma hasn't been called
-export { prisma };
+// For backwards compatibility, export a proxy that resolves the client dynamically
+const prismaProxy = new Proxy({} as PrismaClient, {
+  get(target, prop, receiver) {
+    // Return the property from the initialized prisma instance
+    return Reflect.get(getPrisma(), prop, receiver);
+  },
+});
+
+export { prismaProxy as prisma };
+

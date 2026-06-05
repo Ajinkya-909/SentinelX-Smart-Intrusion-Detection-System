@@ -67,7 +67,7 @@ def run_tests():
     print(f"{'=' * 70}")
     
     for name, status in results.items():
-        status_symbol = "✓" if status == "PASSED" else "✗"
+        status_symbol = "[PASS]" if status == "PASSED" else "[FAIL]"
         print(f"{status_symbol} {name}: {status}")
     
     # Overall result
@@ -75,10 +75,10 @@ def run_tests():
     
     print(f"\n{'=' * 70}")
     if all_passed:
-        print("All tests PASSED ✓")
+        print("All tests PASSED")
         return 0
     else:
-        print("Some tests FAILED ✗")
+        print("Some tests FAILED")
         return 1
 
 

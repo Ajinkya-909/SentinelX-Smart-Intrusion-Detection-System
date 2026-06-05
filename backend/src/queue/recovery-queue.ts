@@ -37,7 +37,8 @@ export function initializeRecoveryQueue() {
 
       try {
         // Increment retry count in DB
-        await jobService.updateJobRetryCount(jobId);
+        const updatedJob = await jobService.updateJobRetryCount(jobId);
+        const newRetryCount = updatedJob?.retry_count || 1;
 
         // Re-insert to main queue
         const { getJobQueue } = await import("./index");
@@ -51,7 +52,7 @@ export function initializeRecoveryQueue() {
             file_name: "",
           },
           {
-            jobId: `${jobId}-retry`,
+            jobId: `${jobId}-retry-${newRetryCount}`,
             attempts: 1,
             backoff: {
               type: "fixed",
@@ -118,9 +119,9 @@ export const pushToRecoveryQueue = async (
       "recover-job",
       { jobId, filePath },
       {
-        jobId: `recovery-${jobId}`,
+        jobId: `recovery-${jobId}-${Date.now()}`,
         removeOnComplete: true,
-        removeOnFail: false,
+        removeOnFail: true,
       },
     );
 

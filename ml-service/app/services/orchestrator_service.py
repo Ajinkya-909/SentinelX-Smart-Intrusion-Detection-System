@@ -47,7 +47,7 @@ class OrchestratorService:
             logger.info(f"[ORCHESTRATOR] Starting analysis {analysis_id}")
             
             # Convert request vectors to list of dicts (from Pydantic objects)
-            vectors_dict = [v.dict() for v in request.vectors]
+            vectors_dict = [v.model_dump() for v in request.vectors]
             
             # Validate input
             if not validate_feature_vectors(vectors_dict):
@@ -87,6 +87,61 @@ class OrchestratorService:
                 results = OrchestratorService._merge_results(results, dbscan_results)
                 logger.info(f"[ORCHESTRATOR] DBSCAN produced {len(dbscan_results)} results")
             
+            # Apply heuristic boosts for known intrusion patterns, especially useful for small batch sizes
+            for r in results:
+                # Find the matching input vector
+                matching_vector = next((v for v in vectors_dict if v.get("entity") == r.entity), None)
+                if matching_vector:
+                    total_boost = 0.0
+                    boost_reasons = []
+                    
+                    # 1. Brute Force Heuristic
+                    failed_logins = matching_vector.get("failedLoginAttempts")
+                    if failed_logins is not None and failed_logins >= 20:
+                        total_boost += 0.15
+                        boost_reasons.append(f"High number of failed login attempts ({int(failed_logins)})")
+                        
+                    # 2. High Request Velocity
+                    req_vel = matching_vector.get("requestVelocity") or matching_vector.get("requestsPerSecond") or matching_vector.get("requestsPerMinute")
+                    if req_vel is not None:
+                        # Normalize requestsPerMinute to per-second approx for check
+                        if matching_vector.get("requestsPerMinute") is not None and req_vel >= 600:
+                            total_boost += 0.15
+                            boost_reasons.append(f"Extreme request velocity ({int(req_vel)}/min)")
+                        elif req_vel >= 50:
+                            total_boost += 0.15
+                            boost_reasons.append(f"Extreme request velocity ({int(req_vel)}/sec)")
+                            
+                    # 3. High Error Rate
+                    err_rate = matching_vector.get("errorRate")
+                    if err_rate is not None and err_rate >= 0.7:
+                        total_boost += 0.10
+                        boost_reasons.append(f"High error rate ({err_rate:.1%})")
+                        
+                    # 4. Large Data Exfiltration
+                    data_trans = matching_vector.get("totalDataTransferred") or matching_vector.get("dataTransferred")
+                    if data_trans is not None and data_trans >= 500000000: # 500 MB
+                        total_boost += 0.15
+                        boost_reasons.append(f"Massive data transfer volume ({data_trans / (1024**3):.2f} GB)")
+                        
+                    # 5. Concurrent Session Anomalies
+                    conn_sess = matching_vector.get("concurrentSessions")
+                    if conn_sess is not None and conn_sess >= 3:
+                        total_boost += 0.10
+                        boost_reasons.append(f"Multiple concurrent sessions ({int(conn_sess)})")
+                        
+                    if total_boost > 0.0:
+                        new_score = min(r.anomalyScore + total_boost, 1.0)
+                        r.anomalyScore = new_score
+                        if new_score >= 0.5:
+                            r.anomalyDecision = -1
+                        # Re-map risk and confidence
+                        from app.utils.risk_mapper import map_anomaly_score_to_risk
+                        r.risk = map_anomaly_score_to_risk(new_score)
+                        r.confidence = max(r.confidence, new_score)
+                        # Add heuristic reasons to the list
+                        r.reasons = list(set(r.reasons + boost_reasons))
+
             # Calculate statistics
             stats = OrchestratorService._calculate_statistics(results)
             
@@ -121,7 +176,7 @@ class OrchestratorService:
         """
         Merge results from Isolation Forest and DBSCAN.
         
-        For same entities, aggregate findings (take highest risk).
+        For same entities, aggregate findings using weighted consensus (70% IF, 30% DBSCAN).
         
         Args:
             if_results: Isolation Forest results
@@ -143,21 +198,33 @@ class OrchestratorService:
                 # Entity already has IF result
                 existing = result_map[dbscan_result.entity]
                 
-                # Take highest risk level
-                risk_order = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
-                if risk_order.get(dbscan_result.risk, 0) > risk_order.get(existing.risk, 0):
-                    # Keep DBSCAN result
-                    result_map[dbscan_result.entity] = dbscan_result
-                # Otherwise keep IF result
+                # Weighted consensus: 70% IF score, 30% DBSCAN score
+                fused_score = (existing.anomalyScore * 0.7) + (dbscan_result.anomalyScore * 0.3)
+                existing.anomalyScore = fused_score
+                
+                # Re-evaluate decision based on fused score
+                existing.anomalyDecision = -1 if fused_score >= 0.5 else 1
+                
+                # Re-map risk and confidence
+                from app.utils.risk_mapper import map_anomaly_score_to_risk
+                existing.risk = map_anomaly_score_to_risk(fused_score)
+                existing.confidence = max(existing.confidence, fused_score)
                 
                 # Combine reasons
                 combined_reasons = list(set(existing.reasons + dbscan_result.reasons))
-                result_map[dbscan_result.entity].reasons = combined_reasons
+                existing.reasons = combined_reasons
                 
                 # Combine detection method
-                result_map[dbscan_result.entity].detectionMethod = "Hybrid"
+                existing.detectionMethod = "Hybrid"
             else:
                 # New entity from DBSCAN
+                # If IF is active but this entity was only evaluated by DBSCAN, scale DBSCAN's score
+                from app.utils.risk_mapper import map_anomaly_score_to_risk
+                if ISOLATION_FOREST_ENABLED:
+                    fused_score = dbscan_result.anomalyScore * 0.3
+                    dbscan_result.anomalyScore = fused_score
+                    dbscan_result.anomalyDecision = -1 if fused_score >= 0.5 else 1
+                    dbscan_result.risk = map_anomaly_score_to_risk(fused_score)
                 result_map[dbscan_result.entity] = dbscan_result
         
         return list(result_map.values())

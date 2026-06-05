@@ -43,6 +43,7 @@ export const OverviewInsightSchema = z.object({
   total_threats: z.number().int().nonnegative(),
   affected_systems: z.number().int().nonnegative(),
   key_findings: z.array(z.string().min(1)),
+  compromise_status: z.enum(["CONFIRMED", "NOT OBSERVED", "UNKNOWN"]).optional(),
 });
 
 export const KPIInsightSchema = z.object({
@@ -75,6 +76,7 @@ export const ThreatSummaryInsightSchema = z.object({
   high_threats: z.number().int().nonnegative(),
   summary_narrative: z.string().min(1),
   immediate_concerns: z.array(z.string().min(1)),
+  compromise_status: z.enum(["CONFIRMED", "NOT OBSERVED", "UNKNOWN"]).optional(),
 });
 
 export const SeverityDistributionInsightSchema = z.object({

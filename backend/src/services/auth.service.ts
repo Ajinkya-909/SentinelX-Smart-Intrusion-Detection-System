@@ -105,8 +105,11 @@ export const updateUserService = async (
 
   // If updating password, validate current password
   if (updateData.new_password) {
+    if (!updateData.current_password) {
+      throw new ApiError(400, "Current password is required to set a new password");
+    }
     const isPasswordValid = await bcrypt.compare(
-      updateData.current_password!,
+      updateData.current_password,
       existingUser.password_hash,
     );
     if (!isPasswordValid) {
@@ -139,7 +142,7 @@ export const updateUserService = async (
   };
 };
 
-export const deletUserService = async (
+export const deleteUserService = async (
   tokenUserId: string,
   paramUserId: string,
 ) => {

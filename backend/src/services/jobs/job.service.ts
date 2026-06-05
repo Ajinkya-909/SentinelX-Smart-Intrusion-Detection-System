@@ -22,8 +22,8 @@ const jobService = {
       throw new ApiError(404, "User not found");
     }
 
-    if (file_size > 100 * 1024 * 1024) {
-      throw new ApiError(413, "File exceeds maximum size of 100MB");
+    if (file_size > 300 * 1024 * 1024) {
+      throw new ApiError(413, "File exceeds maximum size of 300MB");
     }
 
     if (!file_path) {

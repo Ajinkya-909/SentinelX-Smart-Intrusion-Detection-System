@@ -339,18 +339,11 @@ export const normalizerService = {
       });
     }
 
-    await prisma.jobs.update({
-      where: { id: jobId },
-      data: {
-        last_completed_stage: "NORMALIZED",
-        processing_metadata: {
-          ...processingMetadata,
-          normalized_count: successCount,
-          normalization_time_ms: Date.now() - startTime,
-          failed_to_normalize: failCount,
-        },
-      },
-    });
+    // Note: Database update for job stage and metadata removed from here
+    // because this method is called per batch. The orchestrator now performs
+    // a single aggregated update at the end of all batches to avoid premature
+    // checkpointing and metadata overwrites.
+
 
     return {
       success: true,

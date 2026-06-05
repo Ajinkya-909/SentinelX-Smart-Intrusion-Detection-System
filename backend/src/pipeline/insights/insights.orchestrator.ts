@@ -86,6 +86,22 @@ export const insightsOrchestrator = {
       // ===== STEP 3: GENERATE LLM INSIGHTS =====
       logger.info(`[INSIGHTS ORCHESTRATOR] Step 3: Generating LLM insights...`);
 
+      // Calculate successful and failed logins from normalized logs
+      const failedLoginCount = normalizedLogs.filter(
+        (log) =>
+          log.event_type === "LOGIN_FAILED" ||
+          log.event_type === "AUTH_FAILURE" ||
+          log.metadata?.security?.authSuccess === false
+      ).length;
+
+      const successfulLoginCount = normalizedLogs.filter(
+        (log) =>
+          log.event_type === "AUTH_SUCCESS" ||
+          log.event_type === "LOGIN_SUCCESS" ||
+          log.event_type === "SESSION_START" ||
+          log.metadata?.security?.authSuccess === true
+      ).length;
+
       let llmInsights: InsightRecord[] = [];
       const failedInsights: Array<{ type: string; reason: string }> = [];
 
@@ -113,6 +129,8 @@ export const insightsOrchestrator = {
               "ATTACK_PATTERN",
               "ANOMALY_SUMMARY",
             ],
+            successfulLoginCount,
+            failedLoginCount,
           });
 
           llmInsights = llmResult.generatedInsights;
@@ -131,8 +149,7 @@ export const insightsOrchestrator = {
           );
         } catch (error) {
           logger.error(
-            `[INSIGHTS ORCHESTRATOR] LLM insight generation failed: ${
-              error instanceof Error ? error.message : error
+            `[INSIGHTS ORCHESTRATOR] LLM insight generation failed: ${error instanceof Error ? error.message : error
             }`,
           );
           failedInsights.push({
@@ -180,8 +197,7 @@ export const insightsOrchestrator = {
       };
     } catch (error) {
       logger.error(
-        `[INSIGHTS ORCHESTRATOR] Error in insights generation: ${
-          error instanceof Error ? error.message : error
+        `[INSIGHTS ORCHESTRATOR] Error in insights generation: ${error instanceof Error ? error.message : error
         }`,
       );
       throw error;

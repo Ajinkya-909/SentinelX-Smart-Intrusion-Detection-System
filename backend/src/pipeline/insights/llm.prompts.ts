@@ -13,6 +13,8 @@ import { ActivityTimelineInsightData } from "@/types/insight.types";
 export const buildMasterContext = (
   findings: any[],
   timelineData: ActivityTimelineInsightData,
+  successfulLoginCount: number = 0,
+  failedLoginCount: number = 0,
 ): string => {
   // 1. Severity Summary
   const severityCounts = {
@@ -91,6 +93,10 @@ export const buildMasterContext = (
 TOTAL THREATS DETECTED: ${findings.length}
 SEVERITY BREAKDOWN: CRITICAL:${severityCounts.CRITICAL}, HIGH:${severityCounts.HIGH}, MEDIUM:${severityCounts.MEDIUM}, LOW:${severityCounts.LOW}
 
+LOGIN STATS:
+Successful Logins: ${successfulLoginCount}
+Failed Logins: ${failedLoginCount}
+
 TOP THREAT ACTORS (IPs/Users):
 ${topEntities || "None clearly identified"}
 
@@ -108,6 +114,17 @@ export const masterInsightPrompt = `
 You are an elite enterprise security analyst and incident responder. Review the provided SECURITY ANALYSIS CONTEXT.
 Your task is to synthesize the raw analyzer findings and forensic evidence into a comprehensive, executive-level security report.
 
+CRITICAL SECURITY SEMANTICS & GUIDELINES:
+1. COMPROMISE ASSESSMENT (CRITICAL vs HIGH/MEDIUM):
+   - You MUST determine if there is any evidence of successful login or compromise in the context (e.g., accepted passwords, privilege escalation, successful command execution, persistent sessions).
+   - If NO successful logins or compromise events are present, you MUST set the overall OVERVIEW.threat_level and THREAT_SUMMARY.overall_threat_classification to "HIGH" (or "MEDIUM" / "LOW") at most. NEVER classify an incident as "CRITICAL" unless a successful compromise has occurred.
+   - If no successful login or compromise is observed, you MUST explicitly state the following exact sentence in both OVERVIEW.summary and THREAT_SUMMARY.summary_narrative: "No successful authentication was observed." (e.g., "Successful Logins: 0").
+   - Explicitly classify the compromise status as "NOT OBSERVED" in your narratives.
+2. RECOMMENDATIONS (NO FALSE ACCOUNT ASSUMPTIONS):
+   - Never assume guessed usernames exist. Instead of telling the user to "Force password resets for: root, admin, test, mysql, ftp", recommend: "Verify whether targeted accounts exist. Disable unused accounts. Reset credentials and force password resets only for confirmed existing accounts."
+3. OBSERVATIONS VS INTENTIONS (ATTACK_PATTERN.likely_goals):
+   - Do not list goals as if they are observed facts. Frame likely goals strictly as potential attacker objectives if the campaign were to succeed (e.g., "Establish persistence if credentials are compromised", "Potential privilege escalation if a password is valid"), not as completed actions.
+
 You MUST respond with a single, valid JSON object exactly matching the schema below.
 DO NOT include markdown formatting (like \`\`\`json) or any outside text. ONLY return the raw JSON object.
 
@@ -118,7 +135,8 @@ SCHEMA REQUIREMENTS:
     "threat_level": "<Enum: CRITICAL, HIGH, MEDIUM, or LOW>",
     "total_threats": <Number: total count of threats found>,
     "affected_systems": <Number: total count of affected systems or entities>,
-    "key_findings": ["<String: finding 1>", "<String: finding 2>"]
+    "key_findings": ["<String: finding 1>", "<String: finding 2>"],
+    "compromise_status": "<Enum: CONFIRMED, NOT OBSERVED, or UNKNOWN>"
   },
   "THREAT_SUMMARY": {
     "overall_threat_classification": "<Enum: CRITICAL, HIGH, MEDIUM, or LOW>",
@@ -126,7 +144,8 @@ SCHEMA REQUIREMENTS:
     "critical_threats": <Number: count of critical threats>,
     "high_threats": <Number: count of high threats>,
     "summary_narrative": "<String: concise narrative summary>",
-    "immediate_concerns": ["<String: concern 1>", "<String: concern 2>"]
+    "immediate_concerns": ["<String: concern 1>", "<String: concern 2>"],
+    "compromise_status": "<Enum: CONFIRMED, NOT OBSERVED, or UNKNOWN>"
   },
   "RECOMMENDATION": {
     "recommendations": [

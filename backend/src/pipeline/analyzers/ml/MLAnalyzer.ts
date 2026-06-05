@@ -4,6 +4,8 @@ import { FindingSeverity } from "../shared/findings/FindingSeverity";
 import { createFinding } from "../shared/findings/createFinding";
 import { mlClient } from "./MLClient";
 import logger from "../../../config/logger";
+import { IAnalyzer } from "../shared/interfaces/Analyzer.interface";
+import { mlConfig } from "./config/ml.config";
 
 // CORRECTED IMPORTS: Matching the actual exported function names
 import { extractIpFeatures } from "./features/buildIpFeatures";
@@ -18,7 +20,7 @@ export function extractUsername(log: any): string | null {
   return log.metadata?.actor?.username || null;
 }
 
-export class MLAnalyzer {
+export class MLAnalyzer implements IAnalyzer {
   async analyze(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
     try {
       logger.info(`[ML ANALYZER] Starting feature extraction for context...`);
@@ -75,30 +77,35 @@ export class MLAnalyzer {
       }
 
       // 3. Map the ML anomalies back to standard AnalyzerFindings
-      // Using 'result: any' to bypass the strict type checking on MLAnalysisResult
-      const findings: AnalyzerFinding[] = response.results.map(
-        (result: any) => {
-          const score = typeof result.score === "number" ? result.score : 0.0;
-          const entityId =
-            result.entity_id || result.entityId || "unknown_entity";
-          const algorithm =
-            result.algorithm || result.model_name || "multi_model_ensemble";
-          const details = result.details || {};
-          const entityType =
-            result.entity_type || result.entityType || "system";
-          const logs = Array.isArray(result.related_log_ids)
-            ? result.related_log_ids
-            : Array.isArray(result.log_ids)
-              ? result.log_ids
-              : [];
+      // FIX: Aligned field names to match FastAPI's MLResult response schema
+      // (response.py). Previously used `result.score` / `result.entity_id` /
+      // `result.algorithm` which are all undefined in the actual response,
+      // causing every ML finding to default to score=0.0 / entity="unknown".
+      const findings: AnalyzerFinding[] = response.results
+        .filter((result: any) => result.anomalyDecision === -1)
+        .map(
+          (result: any) => {
+            const score = typeof result.anomalyScore === "number" ? result.anomalyScore : 0.0;
+            const entityId =
+              result.entity || result.entity_id || result.entityId || "unknown_entity";
+            const algorithm =
+              result.detectionMethod || result.algorithm || result.model_name || "multi_model_ensemble";
+            const details = result.featureContributions || result.details || {};
+            const entityType =
+              result.entity_type || result.entityType || (entityId.startsWith("ip:") ? "ip" : entityId.startsWith("user:") ? "user" : entityId.startsWith("session:") ? "session" : "system");
+            const logs = Array.isArray(result.related_log_ids)
+              ? result.related_log_ids
+              : Array.isArray(result.log_ids)
+                ? result.log_ids
+                : [];
 
-          // Determine severity based on the anomaly score
-          const severity =
-            score >= 0.9
-              ? FindingSeverity.CRITICAL
-              : score >= 0.75
+            // Determine severity based on the anomaly score
+            const severity =
+              score >= 0.85
                 ? FindingSeverity.HIGH
-                : FindingSeverity.MEDIUM;
+                : score >= 0.6
+                  ? FindingSeverity.MEDIUM
+                  : FindingSeverity.LOW;
 
           return createFinding({
             jobId: ctx.jobId,
@@ -139,6 +146,9 @@ export class MLAnalyzer {
       logger.error(
         `[ML ANALYZER ERROR] ${error instanceof Error ? error.message : String(error)}`,
       );
+      if (mlConfig.fallback?.skipOnServiceDown === false) {
+        throw error;
+      }
       return [];
     }
   }

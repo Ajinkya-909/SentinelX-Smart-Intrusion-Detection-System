@@ -235,7 +235,7 @@ export function normalizeEventType(value: any): string {
   )
     return strValue;
 
-  const lower = String(value).toLowerCase().trim();
+  const lower = String(value).toLowerCase().trim().replace(/_/g, " ");
 
   // =====================================================================
   // PHASE 3: Enhanced Linux/Syslog Authentication Event Recognition

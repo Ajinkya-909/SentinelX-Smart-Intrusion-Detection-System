@@ -8,6 +8,8 @@ Copyright (c) 2026 Ajinkya Deshmukh
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+
 import logging
 import sys
 
@@ -23,11 +25,24 @@ logger = logging.getLogger(__name__)
 # Import routes (after logging setup)
 from app.api import health, analysis
 
+# Lifespan context manager
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events"""
+    logger.info("[STARTUP] SentinelX ML Service starting")
+    logger.info("[STARTUP] Available routes:")
+    logger.info("[STARTUP]   - GET /health")
+    logger.info("[STARTUP]   - POST /analyze")
+    yield
+    logger.info("[SHUTDOWN] SentinelX ML Service shutting down")
+
+
 # Create FastAPI app
 app = FastAPI(
     title="SentinelX ML Service",
     description="ML analysis service for SentinelX IDS",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -43,21 +58,7 @@ app.add_middleware(
 app.include_router(health.router, tags=["health"])
 app.include_router(analysis.router, tags=["analysis"])
 
-# Startup event
-@app.on_event("startup")
-async def startup_event():
-    """Initialize on startup"""
-    logger.info("[STARTUP] SentinelX ML Service starting")
-    logger.info("[STARTUP] Available routes:")
-    logger.info("[STARTUP]   - GET /health")
-    logger.info("[STARTUP]   - POST /analyze")
 
-
-# Shutdown event
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
-    logger.info("[SHUTDOWN] SentinelX ML Service shutting down")
 
 
 # Root endpoint

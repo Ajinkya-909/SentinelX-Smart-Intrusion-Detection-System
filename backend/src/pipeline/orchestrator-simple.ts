@@ -76,6 +76,10 @@ export const executeOrchestrator = async (
       }
 
       try {
+        let totalSuccessCount = 0;
+        let totalFailCount = 0;
+        const normalizationStartTime = Date.now();
+
         // Process through all batches: preprocess → type detect → parse → normalize
         for await (const batch of preprocessorService.preprocess(filePath)) {
           batchCount++;
@@ -88,7 +92,24 @@ export const executeOrchestrator = async (
             console.log(
               `[ORCHESTRATOR] 🔍 Initial Type detection (first batch)...`,
             );
-            detectionResult = await typeDetectorService.detect(batch.rawLines);
+            try {
+              detectionResult = await typeDetectorService.detect(batch.rawLines);
+            } catch (detectError) {
+              // FIX: If type detection throws (malformed file, empty batch),
+              // fall back to GENERIC instead of crashing with null dereference
+              // on detectionResult.detectedType below.
+              console.warn(
+                `[ORCHESTRATOR] ⚠️ Type detection failed, falling back to GENERIC:`,
+                detectError instanceof Error ? detectError.message : detectError,
+              );
+              detectionResult = {
+                detectedType: "GENERIC",
+                confidence: 1,
+                parser: "genericParser",
+                encoding: "utf8",
+                patterns: { matched: [], analysis: {} },
+              };
+            }
             await typeDetectorService.updateDetectionMetadata(
               jobId,
               detectionResult,
@@ -196,6 +217,10 @@ export const executeOrchestrator = async (
           if (normalizationResult.success) {
             totalLinesProcessed +=
               normalizationResult.stats.successfullyNormalized;
+            totalSuccessCount +=
+              normalizationResult.stats.successfullyNormalized;
+            totalFailCount +=
+              normalizationResult.stats.failed;
             console.log(
               `[ORCHESTRATOR] ✓ Batch normalized: ${normalizationResult.stats.successfullyNormalized} logs`,
             );
@@ -203,6 +228,19 @@ export const executeOrchestrator = async (
             throw new Error(`Normalization failed for batch #${batchCount}`);
           }
         }
+
+        // Now update the job's processing_metadata once all batches are done
+        await prisma.jobs.update({
+          where: { id: jobId },
+          data: {
+            processing_metadata: {
+              ...(detectionResult || {}),
+              normalized_count: totalSuccessCount,
+              normalization_time_ms: Date.now() - normalizationStartTime,
+              failed_to_normalize: totalFailCount,
+            },
+          },
+        });
 
         // Mark NORMALIZED checkpoint
         await checkpointService.markStageComplete(
@@ -332,7 +370,11 @@ export const executeOrchestrator = async (
       `\n[ORCHESTRATOR] ❌ Pipeline failed for job ${jobId}:`,
       error,
     );
-    await jobService.updateJobStatus(jobId, JobStatusEnum.FAILED);
+    // FIX: Do NOT mark the job as FAILED here. The worker (job.worker.ts)
+    // is the single authority that decides whether to retry or mark FAILED
+    // based on the retry_count. Previously, this line preempted the worker's
+    // retry logic — the recovery queue would re-enqueue the job, but the
+    // worker would reject it because status was already FAILED.
 
     throw error;
   }

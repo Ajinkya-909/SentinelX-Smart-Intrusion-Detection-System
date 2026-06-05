@@ -8,7 +8,12 @@ import { sqlInjectionDetector } from "./detectors/sqlInjection.detector";
 import { xssDetector } from "./detectors/xss.detector";
 import { bruteForceDetector } from "./detectors/bruteForce.detector";
 import { pathTraversalDetector } from "./detectors/pathTraversal.detector";
-// ... (import your other existing detectors)
+import { accountTakeoverDetector } from "./detectors/accountTakeover.detector";
+import { impossibleVelocityDetector } from "./detectors/impossibleVelocity.detector";
+import { maliciousUploadDetector } from "./detectors/maliciousUpload.detector";
+import { privilegeEscalationDetector } from "./detectors/privilegeEscalation.detector";
+import { rapidAuthVelocityDetector } from "./detectors/rapidAuthVelocity.detector";
+import { scannerBotDetector } from "./detectors/scannerBot.detector";
 
 // Import NEW Context-Aware Detectors
 import { suricataDetector } from "./detectors/suricata.detector";
@@ -30,10 +35,15 @@ export class RuleAnalyzer implements IAnalyzer {
         this.executeDetector("SQL Injection", sqlInjectionDetector, ctx),
         this.executeDetector("XSS", xssDetector, ctx),
         this.executeDetector("Path Traversal", pathTraversalDetector, ctx),
+        this.executeDetector("Malicious File Upload", maliciousUploadDetector, ctx),
+        this.executeDetector("Scanner Bot", scannerBotDetector, ctx),
         
         // 3. Authentication & Rules
         this.executeDetector("Brute Force", bruteForceDetector, ctx),
-        // ... (call your other detectors)
+        this.executeDetector("Account Takeover", accountTakeoverDetector, ctx),
+        this.executeDetector("Impossible Velocity", impossibleVelocityDetector, ctx),
+        this.executeDetector("Rapid Auth Velocity", rapidAuthVelocityDetector, ctx),
+        this.executeDetector("Privilege Escalation", privilegeEscalationDetector, ctx),
       ]);
 
       // Flatten and collect findings

@@ -47,13 +47,14 @@ export const startWorker = async () => {
         const currentRetryCount = jobRecord?.retry_count || 0;
 
         if (currentRetryCount >= 2) {
-          // Max retries reached - mark as FAILED
+          // Max retries reached - mark as FAILED with error message
+          const errorMessage = error instanceof Error ? error.message : String(error);
           console.error(
             `[JOB ERROR] ❌ Job ${payload.job_id} failed after 2 retries. Marking as FAILED.`,
           );
-          await jobService.updateJobStatus(
+          await jobService.markJobFailed(
             payload.job_id,
-            JobStatusEnum.FAILED,
+            errorMessage,
           );
         } else {
           // Retry available - push to recovery queue

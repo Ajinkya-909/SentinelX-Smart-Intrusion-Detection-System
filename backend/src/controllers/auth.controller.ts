@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { asyncHandler } from "@/utils/async-handler";
 import {
-  deletUserService,
+  deleteUserService,
   loginuserService,
   registerUserService,
   updateUserService,
@@ -52,7 +52,7 @@ export const userUserDelete = asyncHandler(
     const userIdFromToken = req.user!.id;
     const userIdFromParams = req.params.userId;
 
-    const result = await deletUserService(userIdFromToken, userIdFromParams);
+    const result = await deleteUserService(userIdFromToken, userIdFromParams);
 
     return res
       .status(200)

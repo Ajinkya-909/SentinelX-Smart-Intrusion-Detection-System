@@ -43,8 +43,8 @@ class MLResult(BaseModel):
     
     timestamp: str = Field(..., description="Analysis timestamp ISO 8601")
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "entity": "ip:192.168.1.1",
                 "anomalyScore": 0.93,
@@ -72,6 +72,7 @@ class MLResult(BaseModel):
                 "timestamp": "2026-05-24T10:30:00Z"
             }
         }
+    }
 
 
 class AnalysisStats(BaseModel):
@@ -102,8 +103,8 @@ class AnalysisResponse(BaseModel):
     
     error: Optional[str] = Field(None, description="Error message if status=error")
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "status": "success",
                 "model": "IsolationForest",
@@ -135,3 +136,4 @@ class AnalysisResponse(BaseModel):
                 }
             }
         }
+    }

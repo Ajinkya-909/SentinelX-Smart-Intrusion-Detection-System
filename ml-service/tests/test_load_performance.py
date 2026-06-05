@@ -102,6 +102,23 @@ class TestLoadAndPerformance:
     
     def test_response_time_scales_linearly(self):
         """Test that response time scales approximately linearly with input size"""
+        # Warm up request to prevent cold-start caching jitter
+        warmup_vectors = [
+            {
+                "entity": "ip:192.168.1.0",
+                "failedLoginAttempts": 5,
+                "totalRequests": 100,
+                "requestVelocity": 10.0,
+                "errorRate": 0.05,
+                "entropySrcPorts": 0.3,
+                "uniqueEndpoints": 5,
+                "authSuccessRate": 0.95,
+                "httpErrorCount": 2,
+                "avgResponseTime": 250,
+            }
+        ]
+        client.post("/analyze", json={"vectors": warmup_vectors})
+
         times = []
         
         for batch_size in [10, 20, 30]:

@@ -22,6 +22,8 @@ interface LLMInsightGenerationRequest {
   findings: any[];
   timelineData: ActivityTimelineInsightData;
   insightTypes?: string[];
+  successfulLoginCount?: number;
+  failedLoginCount?: number;
 }
 
 interface LLMInsightGenerationResult {
@@ -159,6 +161,8 @@ export const llmInsightsGenerator = {
       const context = buildMasterContext(
         request.findings,
         request.timelineData,
+        request.successfulLoginCount,
+        request.failedLoginCount,
       );
       const prompt = `${masterInsightPrompt}\n\n${context}`;
 
@@ -209,9 +213,8 @@ export const llmInsightsGenerator = {
             );
             failedInsights.push({
               insightType,
-              reason: `Validation failed: ${
-                validation.errors?.[0]?.message || "Unknown schema error"
-              }`,
+              reason: `Validation failed: ${validation.errors?.[0]?.message || "Unknown schema error"
+                }`,
             });
             continue;
           }
@@ -266,8 +269,7 @@ export const llmInsightsGenerator = {
       };
     } catch (error) {
       logger.error(
-        `[LLM GENERATOR] Fatal error: ${
-          error instanceof Error ? error.message : error
+        `[LLM GENERATOR] Fatal error: ${error instanceof Error ? error.message : error
         }`,
       );
       throw error;

@@ -20,13 +20,13 @@ export const pipelineService = {
 
       await executeOrchestrator(jobId, job.file_path);
     } catch (error) {
-      try {
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown pipeline error";
-        await jobService.markJobFailed(jobId, errorMessage);
-      } catch (markError) {
-        console.error("[PIPELINE ERROR] Failed to mark job as failed");
-      }
+      // FIX: Do NOT mark the job as FAILED here. The worker (job.worker.ts)
+      // is the single authority that decides whether to retry or mark FAILED.
+      // Previously, markJobFailed() here would set status=FAILED before the
+      // worker's retry logic could evaluate retry_count, breaking recovery.
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown pipeline error";
+      console.error(`[PIPELINE SERVICE] Pipeline error for job ${jobId}: ${errorMessage}`);
 
       throw error;
     }

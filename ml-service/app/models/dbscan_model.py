@@ -46,7 +46,31 @@ class DBSCANModel:
         Returns:
             Labels (-1 = noise/anomaly, >= 0 = cluster ID)
         """
-        labels = self.model.fit_predict(X)
+        n_samples = X.shape[0]
+        
+        # Determine min_samples dynamically based on batch size.
+        # If we have at least 3 samples, we allow a cluster size of n_samples - 1.
+        if n_samples >= 3:
+            min_samples = max(2, min(self.min_samples, n_samples - 1))
+        else:
+            min_samples = max(2, min(self.min_samples, n_samples))
+        
+        if n_samples < 2:
+            logger.info(f"[DBSCAN] Not enough samples ({n_samples}) to run DBSCAN. Returning normal labels.")
+            return np.zeros(n_samples, dtype=int)
+
+        # Use adjusted min_samples if dataset is small
+        if min_samples != self.min_samples:
+            model = DBSCAN(
+                eps=self.eps,
+                min_samples=min_samples,
+                metric=self.metric,
+                n_jobs=-1
+            )
+        else:
+            model = self.model
+
+        labels = model.fit_predict(X)
         logger.debug(f"[DBSCAN] Predicted labels: {labels.shape}")
         return labels
     
@@ -63,12 +87,27 @@ class DBSCANModel:
         """
         n_samples = X.shape[0]
         scores = np.zeros(n_samples)
+
+        if n_samples < 2:
+            return scores
+            
+        # If DBSCAN labels all points as noise/outliers (meaning no clusters could be formed),
+        # then we have no normal baseline to compare against. To avoid false positive storms
+        # on small or highly sparse batches, we set all anomaly scores to 0.0.
+        if np.all(labels == -1):
+            logger.info("[DBSCAN] All points labeled as noise. Setting all anomaly scores to 0.0.")
+            return scores
+
+        if n_samples >= 3:
+            min_samples = max(2, min(self.min_samples, n_samples - 1))
+        else:
+            min_samples = max(2, min(self.min_samples, n_samples))
         
         # Calculate distances to neighbors
         from sklearn.neighbors import NearestNeighbors
         
         try:
-            neighbors = NearestNeighbors(n_neighbors=self.min_samples)
+            neighbors = NearestNeighbors(n_neighbors=min_samples)
             neighbors.fit(X)
             distances, indices = neighbors.kneighbors(X)
             
@@ -84,10 +123,10 @@ class DBSCANModel:
             # Assign scores
             for i in range(n_samples):
                 if labels[i] == -1:  # Noise point
-                    scores[i] = 1.0  # Maximum anomaly
+                    scores[i] = 0.65  # Moderate anomaly score for outliers
                 else:  # In cluster
-                    # Score based on distance to cluster boundary
-                    scores[i] = k_distances_norm[i]
+                    # Score based on distance, scaled to keep it in LOW/MEDIUM risk
+                    scores[i] = k_distances_norm[i] * 0.3
             
             logger.debug(f"[DBSCAN] Computed anomaly scores: {scores.shape}")
             return scores
@@ -96,7 +135,7 @@ class DBSCANModel:
             # Fallback: use labels directly
             scores = np.zeros(n_samples)
             for i in range(n_samples):
-                scores[i] = 0.9 if labels[i] == -1 else 0.1
+                scores[i] = 0.65 if labels[i] == -1 else 0.1
             return scores
 
 

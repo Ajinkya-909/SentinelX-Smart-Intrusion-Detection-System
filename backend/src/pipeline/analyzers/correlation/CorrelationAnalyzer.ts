@@ -3,12 +3,13 @@ import { AnalyzerFinding } from "../shared/findings/Finding.types";
 import { AnalysisContext } from "../shared/context/AnalysisContext";
 import logger from "../../../config/logger";
 
-// Import the 5 "Chain" detectors
+// Import the 5 "Chain" detectors + new Brute Force Campaign detector
 import { reconExploitationChainDetector } from "./detectors/reconExploitationChain.detector";
 import { dataExfiltrationChainDetector } from "./detectors/dataExfiltrationChain.detector";
 import { lateralMovementDetector } from "./detectors/lateralMovement.detector";
 import { privilegeEscalationChainDetector } from "./detectors/privilegeEscalationChain.detector";
 import { sessionHijackingDetector } from "./detectors/sessionHijacking.detector";
+import { bruteForceCampaignDetector } from "./detectors/bruteForceCampaign.detector";
 
 export class CorrelationAnalyzer implements IAnalyzer {
   async analyze(ctx: AnalysisContext): Promise<AnalyzerFinding[]> {
@@ -24,6 +25,7 @@ export class CorrelationAnalyzer implements IAnalyzer {
         this.executeDetector("Lateral Movement", lateralMovementDetector, ctx),
         this.executeDetector("Privilege Escalation Chain", privilegeEscalationChainDetector, ctx),
         this.executeDetector("Session Hijacking", sessionHijackingDetector, ctx),
+        this.executeDetector("Brute-Force Campaign", bruteForceCampaignDetector, ctx),
       ]);
 
       for (const result of detectorResults) {
