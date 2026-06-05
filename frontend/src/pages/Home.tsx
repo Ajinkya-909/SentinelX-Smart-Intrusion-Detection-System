@@ -150,7 +150,7 @@ export default function Home() {
       desc: "SentinelX securely ingests log files up to 300 MB. The ingestion layer reads file metadata and handles compressed formats asynchronously.",
       details: [
         "Memory-safe 4-byte BOM encoding detector",
-        "Supports .log, .txt, .json, and .csv formats",
+        "Supports .log, .txt, .json, .jsonl, and .csv formats",
         "Validates MIME types & file size constraints"
       ],
       icon: Lock,

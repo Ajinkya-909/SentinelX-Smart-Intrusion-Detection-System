@@ -8,13 +8,17 @@ export const UPLOAD_CONFIG = {
   MAX_UPLOAD_SIZE: 300 * 1024 * 1024, // 300MB
 
   // Allowed file types
-  ALLOWED_EXTENSIONS: [".log", ".txt", ".json", ".csv"],
+  ALLOWED_EXTENSIONS: [".log", ".txt", ".json", ".csv", ".jsonl"],
   ALLOWED_MIME_TYPES: [
     "text/plain",               // Standard for .txt
     "application/json",         // Standard for .json
     "text/csv",                 // Standard for .csv
     "application/octet-stream", // Browser fallback for .log files
-    "application/vnd.ms-excel"  // Windows fallback for .csv files
+    "application/vnd.ms-excel", // Windows fallback for .csv files
+    "application/x-ndjson",     // Standard for .jsonl (Newline Delimited JSON)
+    "application/jsonl",        // Alternative for .jsonl
+    "text/jsonl",               // Alternative for .jsonl
+    "application/x-jsonlines"   // Alternative for .jsonl
   ],
 
   // Storage paths

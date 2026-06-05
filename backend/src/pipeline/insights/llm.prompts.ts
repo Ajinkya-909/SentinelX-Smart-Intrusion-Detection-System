@@ -5,6 +5,7 @@
  */
 
 import { ActivityTimelineInsightData } from "@/types/insight.types";
+import { isPrivateIP } from "@/utils/geoip";
 
 /**
  * Builds a highly optimized, entity-enriched context for the LLM
@@ -56,7 +57,13 @@ export const buildMasterContext = (
   const topEntities = Array.from(entityCounts.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
-    .map(([entity, count]) => `${entity} (${count} threats)`)
+    .map(([entity, count]) => {
+      if (entity.includes(".") || entity.includes(":")) {
+        const isPrivate = isPrivateIP(entity);
+        return `${entity} (${count} threats - ${isPrivate ? "INTERNAL/PRIVATE NETWORK" : "EXTERNAL NETWORK"})`;
+      }
+      return `${entity} (${count} threats - USER/ACCOUNT)`;
+    })
     .join(", ");
 
   // 3. Finding Details (Enriched with Evidence!)
@@ -124,6 +131,14 @@ CRITICAL SECURITY SEMANTICS & GUIDELINES:
    - Never assume guessed usernames exist. Instead of telling the user to "Force password resets for: root, admin, test, mysql, ftp", recommend: "Verify whether targeted accounts exist. Disable unused accounts. Reset credentials and force password resets only for confirmed existing accounts."
 3. OBSERVATIONS VS INTENTIONS (ATTACK_PATTERN.likely_goals):
    - Do not list goals as if they are observed facts. Frame likely goals strictly as potential attacker objectives if the campaign were to succeed (e.g., "Establish persistence if credentials are compromised", "Potential privilege escalation if a password is valid"), not as completed actions.
+4. INTERNAL VS EXTERNAL IP ADDRESSES:
+   - Identify internal/private IPs (explicitly labeled in the context as INTERNAL/PRIVATE NETWORK, e.g. 10.x.x.x, 172.16.x.x-172.31.x.x, 192.168.x.x) and distinguish them from external IPs.
+   - You MUST refer to internal/private IPs as internal network assets, local systems, local targets, or potentially compromised internal hosts. NEVER refer to them as external threat actors or external IPs.
+   - Recommendations for internal IPs must focus on internal actions like local malware scans, endpoint isolation, or checking for local misconfigurations, NEVER on blocking them at the edge firewall or treating them as external attackers.
+5. CLASSIFICATION & AVOID OVER-GENERALIZATION (NO CATEGORY COLLAPSE):
+   - The analyzer findings may include a Suricata category like "Attempted Information Leak" in the evidence field. Do NOT collapse all attack types under this single category narrative.
+   - You must distinguish the actual attack types based on finding titles and signatures (e.g. Shellshock is an Remote Code Execution attempt, Metasploit/SSH Scan is reconnaissance/brute force, PE/DLL download is policy violation/malware delivery).
+   - Use the specific attack description in your summaries instead of repeatedly calling every event an "information leak".
 
 You MUST respond with a single, valid JSON object exactly matching the schema below.
 DO NOT include markdown formatting (like \`\`\`json) or any outside text. ONLY return the raw JSON object.

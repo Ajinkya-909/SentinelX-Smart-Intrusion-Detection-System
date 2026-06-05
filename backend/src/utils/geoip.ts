@@ -89,13 +89,45 @@ const IN_STATES: Record<string, string> = {
   DN: "Dadra and Nagar Haveli and Daman and Diu"
 };
 
+export function isPrivateIP(ip: string): boolean {
+  if (!ip) return true;
+  const trimmed = ip.trim();
+  if (trimmed === "127.0.0.1" || trimmed === "::1") return true;
+
+  // IPv4 check
+  const parts = trimmed.split(".");
+  if (parts.length === 4) {
+    const first = parseInt(parts[0]!, 10);
+    const second = parseInt(parts[1]!, 10);
+    if (isNaN(first) || isNaN(second)) return false;
+
+    // 10.0.0.0/8
+    if (first === 10) return true;
+    // 172.16.0.0/12 (172.16.x.x to 172.31.x.x)
+    if (first === 172 && second >= 16 && second <= 31) return true;
+    // 192.168.0.0/16
+    if (first === 192 && second === 168) return true;
+    // 127.0.0.0/8
+    if (first === 127) return true;
+    // 169.254.0.0/16 (Link Local)
+    if (first === 169 && second === 254) return true;
+  }
+
+  // IPv6 checks
+  if (trimmed.startsWith("fe80:") || trimmed.startsWith("fd") || trimmed.startsWith("fc")) {
+    return true;
+  }
+
+  return false;
+}
+
 export const GeoIPUtil = {
   /**
    * Geolocate an IP address using geoip-lite.
    * Runs locally with no external APIs or network overhead.
    */
   lookupIP(ip: string): GeoIPResult {
-    if (!ip || ip === "127.0.0.1" || ip === "::1" || ip.startsWith("192.168.") || ip.startsWith("10.")) {
+    if (!ip || isPrivateIP(ip)) {
       return {
         country: "Internal Network",
         country_code: "LAN",

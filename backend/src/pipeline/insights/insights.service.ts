@@ -797,38 +797,19 @@ export const insightsService = {
       }
     >();
 
-    // Pass 1: Collect from referenced log IP addresses
     for (const finding of findings) {
+      // Collect all unique entities involved in this finding
+      const entitiesInFinding = new Set<string>();
+
+      // 1. Collect from referenced logs
       for (const log of finding.referenced_logs) {
         if (log.ip_address && log.ip_address !== "unknown") {
-          const existing = attackerMap.get(log.ip_address) || {
-            request_count: 0,
-            threat_count: 0,
-            severities: new Set<string>(),
-          };
-
-          existing.request_count++;
-          existing.threat_count++;
-          existing.severities.add(finding.severity || "INFO");
-
-          if (log.timestamp) {
-            if (!existing.last_seen || log.timestamp > existing.last_seen) {
-              existing.last_seen = log.timestamp;
-            }
-          }
-
-          attackerMap.set(log.ip_address, existing);
+          entitiesInFinding.add(log.ip_address);
         }
       }
-    }
 
-    // Pass 2: Collect from affected_entities (IPs and non-IP entities alike)
-    // These contribute to threat counts; the IPv4 filter below ensures only
-    // valid IPs end up in the persisted insight.
-    for (const finding of findings) {
+      // 2. Collect from affected entities
       if (finding.affected_entities) {
-        const entities = new Set<string>();
-
         for (const [key, value] of Object.entries(finding.affected_entities)) {
           if (
             key.includes("ip") ||
@@ -841,30 +822,46 @@ export const insightsService = {
               value !== "unknown" &&
               value.trim() !== ""
             ) {
-              entities.add(value);
+              entitiesInFinding.add(value);
             } else if (Array.isArray(value)) {
               value.forEach((v) => {
-                if (typeof v === "string" && v !== "unknown" && v.trim() !== "")
-                  entities.add(v);
+                if (typeof v === "string" && v !== "unknown" && v.trim() !== "") {
+                  entitiesInFinding.add(v);
+                }
               });
             }
           }
         }
+      }
 
-        for (const entity of entities) {
-          const existing = attackerMap.get(entity) || {
-            request_count: 0,
-            threat_count: 0,
-            severities: new Set<string>(),
-          };
-          existing.threat_count++;
-          existing.severities.add(finding.severity || "INFO");
-          attackerMap.set(entity, existing);
+      // Increment threat count exactly once per unique entity in this finding
+      for (const entity of entitiesInFinding) {
+        const existing = attackerMap.get(entity) || {
+          request_count: 0,
+          threat_count: 0,
+          severities: new Set<string>(),
+        };
+
+        existing.threat_count++;
+        existing.severities.add(finding.severity || "INFO");
+
+        // Request count updates based on logs referring to this entity
+        const matchingLogs = finding.referenced_logs.filter((log) => log.ip_address === entity);
+        existing.request_count += matchingLogs.length;
+
+        for (const log of matchingLogs) {
+          if (log.timestamp) {
+            if (!existing.last_seen || log.timestamp > existing.last_seen) {
+              existing.last_seen = log.timestamp;
+            }
+          }
         }
+
+        attackerMap.set(entity, existing);
       }
     }
 
-    // FIX: Filter to valid IPv4 addresses only before building the final array.
+    // Filter to valid IPv4 addresses only before building the final array.
     // This prevents the entire insight from failing Zod validation because of
     // usernames or hostnames stored in the `ip` field.
     const attackers: AttackerInfo[] = Array.from(attackerMap.entries())

@@ -8,11 +8,15 @@ import { toast } from "sonner";
 import jobService from "@/services/job";
 
 // --- Validation Constants & Config ---
-const ALLOWED_EXTENSIONS = [".log", ".txt", ".json", ".csv"];
+const ALLOWED_EXTENSIONS = [".log", ".txt", ".json", ".csv", ".jsonl"];
 const ALLOWED_MIME_TYPES = [
   "text/plain", // .log, .txt
   "application/json", // .json
   "text/csv", // .csv
+  "application/x-ndjson", // .jsonl
+  "application/jsonl",
+  "text/jsonl",
+  "application/x-jsonlines",
 ];
 
 // Fallback to 80MB if environment variable is not defined

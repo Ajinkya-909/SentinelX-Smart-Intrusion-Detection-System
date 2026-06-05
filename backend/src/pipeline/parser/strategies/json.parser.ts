@@ -79,22 +79,48 @@ export class JsonParser extends BaseParser {
       }
 
       // 2. SURICATA EVE UNPACKER
-      if (json.event_type && json.alert) {
+      if (
+        json.event_type &&
+        (json.alert ||
+          json.flow_id !== undefined ||
+          ["alert", "http", "dns", "tls", "fileinfo", "flow", "stats", "ssh", "smb", "dcerpc"].includes(json.event_type))
+      ) {
+        const isAlert = !!json.alert;
+        const severity = isAlert
+          ? (json.alert.severity <= 2 ? "CRITICAL" : "HIGH")
+          : "INFO";
+
+        let message = `[SURICATA] ${json.event_type.toUpperCase()}`;
+        if (isAlert) {
+          message = `[SURICATA] ${json.alert.signature}`;
+        } else if (json.event_type === "http" && json.http) {
+          message = `[SURICATA HTTP] ${json.http.http_method || "GET"} ${json.http.url || "/"}`;
+        } else if (json.event_type === "dns" && json.dns) {
+          message = `[SURICATA DNS] ${json.dns.type || "query"} ${json.dns.rrname || ""}`;
+        } else if (json.event_type === "tls" && json.tls) {
+          message = `[SURICATA TLS] ${json.tls.subject || "Session"}`;
+        } else if (json.flow_id) {
+          message = `[SURICATA ${json.event_type.toUpperCase()}] Flow ID: ${json.flow_id}`;
+        }
+
         const suricataLog: ParsedLog = {
           timestamp: new Date(json.timestamp || new Date()),
-          logLevel: json.alert.severity <= 2 ? "CRITICAL" : "HIGH",
-          message: `[SURICATA] ${json.alert.signature}`,
+          logLevel: severity,
+          message,
           raw: line,
           metadata: {
             wrapper: "suricata",
             event_type: json.event_type,
             dest_ip: json.dest_ip,
             dest_port: json.dest_port,
-            signature_id: json.alert.signature_id,
-            category: json.alert.category,
             original_json: json,
           },
         };
+
+        if (isAlert) {
+          suricataLog.metadata.signature_id = json.alert.signature_id;
+          suricataLog.metadata.category = json.alert.category;
+        }
 
         // Fix for exactOptionalPropertyTypes
         if (json.src_ip) suricataLog.sourceIp = String(json.src_ip);

@@ -231,6 +231,16 @@ export function normalizeEventType(value: any): string {
       "AUTH_FAILURE",
       "SESSION_START",
       "SESSION_END",
+      "ALERT",
+      "DNS",
+      "HTTP",
+      "TLS",
+      "FLOW",
+      "FILEINFO",
+      "STATS",
+      "SSH",
+      "SMB",
+      "DCERPC",
     ].includes(strValue)
   )
     return strValue;
