@@ -391,10 +391,6 @@ Failure Information:
           
           {/* Left Text */}
           <div className="lg:col-span-5 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-xs font-semibold text-primary font-mono tracking-wider">
-              <Shield className="w-3.5 h-3.5" />
-              SENTINELX INTRUSION DETECTION
-            </div>
             
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight text-white">
               Smart Threat Detection <br />
