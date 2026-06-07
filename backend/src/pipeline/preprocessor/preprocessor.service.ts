@@ -115,7 +115,15 @@ export class PreprocessorService {
   }
 
   private cleanLine(line: string): string {
-    return line.trim();
+    const trimmed = line.trim();
+    // Filter out structural markers from exported log files
+    if (trimmed === "{" || trimmed === "}" || trimmed === "[" || trimmed === "]") {
+      return "";
+    }
+    if (/^[a-zA-Z0-9\s_-]+ logs?:?\s*\{?$/i.test(trimmed)) {
+      return "";
+    }
+    return trimmed;
   }
 
   async *preprocessLines(

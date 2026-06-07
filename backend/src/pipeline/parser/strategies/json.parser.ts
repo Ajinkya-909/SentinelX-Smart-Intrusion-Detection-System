@@ -188,6 +188,7 @@ export class JsonParser extends BaseParser {
           metadata: {
             wrapper: "windows_event",
             event_id: json.System?.EventID || json.EventID,
+            event_type: this.mapWindowsEventIdToType(json.System?.EventID || json.EventID),
             channel: json.System?.Channel || json.Channel,
             provider: json.System?.Provider?.Name || json.Provider,
             // PHASE 2: Promote nested Windows fields to root for easier access by normalizer
@@ -297,6 +298,29 @@ export class JsonParser extends BaseParser {
       return "ERROR";
     if (lower.includes("warn")) return "WARN";
     return "INFO";
+  }
+
+  private mapWindowsEventIdToType(eventId: string | number): string {
+    const id = String(eventId);
+    switch (id) {
+      case "4624": return "LOGIN_SUCCESS";
+      case "4625": return "LOGIN_FAILED";
+      case "4634":
+      case "4647": return "SESSION_END";
+      case "4648": return "LOGIN_ATTEMPT";
+      case "4720": return "ACCOUNT_CREATED";
+      case "4722": return "ACCOUNT_ENABLED";
+      case "4723":
+      case "4724": return "PASSWORD_CHANGED";
+      case "4728":
+      case "4732":
+      case "4756": return "GROUP_MEMBER_ADDED";
+      case "4740": return "ACCOUNT_LOCKED_OUT";
+      case "4688": return "PROCESS_CREATED";
+      case "7045": return "SERVICE_INSTALLED";
+      case "1102": return "AUDIT_LOG_CLEARED";
+      default: return "WINDOWS_EVENT_" + id;
+    }
   }
 
   /**

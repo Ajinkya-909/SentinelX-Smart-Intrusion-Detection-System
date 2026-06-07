@@ -11,6 +11,15 @@ export const validateUpload = (
     throw new ApiError(400, "No file provided. Please upload a file.");
   }
 
+  // Validate file extension
+  const allowedExtensions = [".log", ".txt", ".json", ".jsonl", ".csv", ".evtx", ".zip"];
+  const fileName = req.file.originalname.toLowerCase();
+  const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+  
+  if (!hasValidExtension && !req.file.mimetype.includes("text") && !req.file.mimetype.includes("json")) {
+    throw new ApiError(400, "Invalid file type. Please upload a log file (.log, .txt, .json, .jsonl).");
+  }
+
   // Check file size (sanity check)
   if (!req.file.size || req.file.size === 0) {
     throw new ApiError(400, "Uploaded file is empty");

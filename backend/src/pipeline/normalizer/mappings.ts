@@ -222,6 +222,7 @@ export function normalizeEventType(value: any): string {
 
   // Directly pass through standard actions without fuzzy matching
   if (strValue.startsWith("HTTP_")) return strValue;
+  if (strValue.startsWith("WINDOWS_EVENT_")) return strValue;
   if (
     [
       "LOGIN_ATTEMPT",
