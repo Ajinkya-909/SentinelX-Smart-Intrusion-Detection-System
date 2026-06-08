@@ -235,7 +235,8 @@ const pipelineRepository = {
   },
 
   /**
-   * Fetches a paginated window of normalized logs for analysis
+   * Fetches a paginated window of normalized logs for analysis using OFFSET
+   * @deprecated Use getNormalizedLogsWindowCursor instead for large files
    * @param jobId - UUID of the job
    * @param take - Number of logs to fetch (window size)
    * @param skip - Number of logs to skip (offset)
@@ -248,6 +249,21 @@ const pipelineRepository = {
       orderBy: [{ timestamp: "asc" }, { id: "asc" }],
       take: take,
       skip: skip,
+    });
+  },
+
+  /**
+   * Fetches a paginated window of normalized logs using efficient cursor pagination
+   * @param jobId - UUID of the job
+   * @param take - Number of logs to fetch (window size)
+   * @param cursorId - The ID of the log to start *after*
+   */
+  async getNormalizedLogsWindowCursor(jobId: string, take: number, cursorId?: string) {
+    return await prisma.normalized_logs.findMany({
+      where: { job_id: jobId },
+      orderBy: [{ timestamp: "asc" }, { id: "asc" }],
+      take: take,
+      ...(cursorId ? { skip: 1, cursor: { id: cursorId } } : {}),
     });
   },
 };

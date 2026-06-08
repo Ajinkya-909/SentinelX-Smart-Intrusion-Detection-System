@@ -110,6 +110,7 @@ model normalized_logs {
   @@index([ip_address], map: "idx_logs_ip")
   @@index([job_id], map: "idx_logs_job_id")
   @@index([timestamp], map: "idx_logs_timestamp")
+  @@index([job_id, timestamp, id], map: "idx_logs_job_timestamp_id")
 }
 
 model users {

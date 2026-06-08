@@ -36,7 +36,7 @@ export const analyzerService = {
 
       let totalLogsProcessed = 0;
       let batchCount = 0;
-      const masterFindings: any[] = [];
+      let totalInserted = 0;
 
       // ===== STEP 1: SLIDING WINDOW LOOP =====
       // Consumes chunks from the generator built in Phase 2
@@ -70,75 +70,62 @@ export const analyzerService = {
           `[ANALYZER SERVICE] Window #${batchCount} generated ${windowFindings.length} findings`,
         );
 
-        // Push window findings to the master array
-        masterFindings.push(...windowFindings);
         totalLogsProcessed += validLogs.length;
-      }
 
-      logger.info(
-        `[ANALYZER SERVICE] All windows processed. Total logs scanned (including overlaps): ${totalLogsProcessed}. Total raw findings: ${masterFindings.length}`,
-      );
+        if (windowFindings.length > 0) {
+          // ===== STEP 2: VALIDATE WINDOW FINDINGS =====
+          logger.info(`[ANALYZER SERVICE] Validating Window #${batchCount} findings...`);
+          const validatedFindings = this.validateFindings(windowFindings, jobId);
 
-      if (masterFindings.length === 0) {
-        return [];
-      }
+          if (validatedFindings.invalid.length > 0) {
+            logger.warn(
+              `[ANALYZER SERVICE] Skipped ${validatedFindings.invalid.length} invalid findings`,
+            );
+          }
 
-      // ===== STEP 2: VALIDATE MASTER FINDINGS =====
-      logger.info(
-        `[ANALYZER SERVICE] Validating ${masterFindings.length} raw findings...`,
-      );
-      // FIX 1: Pass the authoritative jobId from the orchestrator down to the validator
-      const validatedFindings = this.validateFindings(masterFindings, jobId);
+          // ===== STEP 3: CONVERT TO DB FORMAT =====
+          let findingsForDb = validatedFindings.valid.map((finding) =>
+            this.convertFindingToDbFormat(finding, jobId),
+          );
 
-      if (validatedFindings.invalid.length > 0) {
-        logger.warn(
-          `[ANALYZER SERVICE] Skipped ${validatedFindings.invalid.length} invalid findings`,
-        );
-      }
+          // ===== STEP 4: DEDUPLICATE WINDOW FINDINGS =====
+          const uniqueFindingsMap = new Map<string, any>();
+          for (const finding of findingsForDb) {
+            if (!uniqueFindingsMap.has(finding.fingerprint)) {
+              uniqueFindingsMap.set(finding.fingerprint, finding);
+            }
+          }
+          const uniqueFindingsForDb = Array.from(uniqueFindingsMap.values());
+          const duplicatesRemoved = findingsForDb.length - uniqueFindingsForDb.length;
+          logger.info(
+            `[ANALYZER SERVICE] Deduplication complete. Removed ${duplicatesRemoved} duplicate boundary findings.`,
+          );
 
-      // ===== STEP 3: CONVERT TO DB FORMAT =====
-      logger.info(`[ANALYZER SERVICE] Converting findings to DB format...`);
-      let findingsForDb = validatedFindings.valid.map((finding) =>
-        this.convertFindingToDbFormat(finding, jobId),
-      );
+          // ===== STEP 5: PERSIST WINDOW FINDINGS =====
+          if (uniqueFindingsForDb.length > 0) {
+            logger.info(
+              `[ANALYZER SERVICE] Persisting ${uniqueFindingsForDb.length} unique findings from Window #${batchCount} to DB...`,
+            );
 
-      // ===== STEP 4: DEDUPLICATION (OVERLAPPING WINDOW FIX) =====
-      logger.info(`[ANALYZER SERVICE] Deduplicating overlapping findings...`);
-
-      const uniqueFindingsMap = new Map<string, any>();
-
-      for (const finding of findingsForDb) {
-        // Use the fingerprint generated in convertFindingToDbFormat
-        if (!uniqueFindingsMap.has(finding.fingerprint)) {
-          uniqueFindingsMap.set(finding.fingerprint, finding);
+            const insertionResult =
+              await pipelineRepository.insertAnalyzerFindings(uniqueFindingsForDb);
+              
+            totalInserted += insertionResult.total_inserted;
+            logger.info(
+              `[ANALYZER SERVICE] Window #${batchCount} Insertion: ${insertionResult.total_inserted} inserted, ${insertionResult.total_skipped} skipped`,
+            );
+          }
         }
-        // If it already exists, it's a boundary duplicate and is safely ignored
       }
 
-      const uniqueFindingsForDb = Array.from(uniqueFindingsMap.values());
-      const duplicatesRemoved =
-        findingsForDb.length - uniqueFindingsForDb.length;
-
       logger.info(
-        `[ANALYZER SERVICE] Deduplication complete. Removed ${duplicatesRemoved} duplicate boundary findings.`,
+        `[ANALYZER SERVICE] All windows processed. Total logs scanned: ${totalLogsProcessed}. Total findings inserted: ${totalInserted}`,
       );
 
-      // ===== STEP 5: PERSIST FINDINGS =====
-      logger.info(
-        `[ANALYZER SERVICE] Persisting ${uniqueFindingsForDb.length} unique findings to DB...`,
-      );
-
-      // IMPORTANT: Passing uniqueFindingsForDb to prevent DB constraint errors
-      const insertionResult =
-        await pipelineRepository.insertAnalyzerFindings(uniqueFindingsForDb);
-
-      logger.info(
-        `[ANALYZER SERVICE] Insertion: ${insertionResult.total_inserted} inserted, ${insertionResult.total_skipped} skipped`,
-      );
       const analysisTime = Date.now() - analysisStartTime;
       logger.info(`[ANALYZER SERVICE] Complete in ${analysisTime}ms`);
 
-      return insertionResult.inserted_findings || [];
+      return [];
     } catch (error) {
       logger.error(
         `[ANALYZER SERVICE] Error: ${error instanceof Error ? error.message : String(error)}`,
@@ -292,7 +279,7 @@ export const analyzerService = {
     windowSize: number = 5000,
     overlap: number = 500,
   ) {
-    let skip = 0;
+    let cursorId: string | undefined = undefined;
     let hasMore = true;
     let iteration = 0;
 
@@ -302,10 +289,10 @@ export const analyzerService = {
 
     while (hasMore) {
       // Fetch the specific window of logs
-      const windowLogs = await pipelineRepository.getNormalizedLogsWindow(
+      const windowLogs = await pipelineRepository.getNormalizedLogsWindowCursor(
         jobId,
         windowSize,
-        skip,
+        cursorId,
       );
 
       if (windowLogs.length === 0) {
@@ -314,7 +301,7 @@ export const analyzerService = {
       }
 
       logger.info(
-        `[ANALYZER SERVICE] Fetched window #${iteration + 1} (${windowLogs.length} logs, skip: ${skip})`,
+        `[ANALYZER SERVICE] Fetched window #${iteration + 1} (${windowLogs.length} logs, cursor: ${cursorId || "start"})`,
       );
 
       // Yield the current window to the orchestrator loop
@@ -325,9 +312,14 @@ export const analyzerService = {
         // We hit the end of the database table
         hasMore = false;
       } else {
-        // Calculate the skip for the next window to ensure overlap
+        // Calculate the log that starts the overlap for the next window
+        const overlapStartLog = windowLogs[windowSize - overlap - 1];
+        if (!overlapStartLog) {
+            hasMore = false;
+            break;
+        }
+        cursorId = overlapStartLog.id;
         iteration++;
-        skip = iteration * (windowSize - overlap);
       }
     }
   },
