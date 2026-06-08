@@ -137,6 +137,9 @@ const jobService = {
     }
 
     const deletedJob = await jobRepository.deleteJob(jobId);
+    if (!deletedJob) {
+      throw new ApiError(404, "Job not found during deletion");
+    }
     return deletedJob;
   },
 
