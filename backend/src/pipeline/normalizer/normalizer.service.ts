@@ -92,7 +92,7 @@ function extractNestedFields(log: ParsedLog, mapping: FieldMapping): Record<stri
   const extracted: Record<string, any> = {};
 
   for (const [key, value] of Object.entries(log)) {
-    if (["timestamp", "logLevel", "message", "sourceIp", "user", "statusCode", "raw", "metadata"].includes(key)) continue;
+    if (["timestamp", "logLevel", "sourceIp", "user", "statusCode", "raw", "metadata"].includes(key)) continue;
     if (value === undefined || value === null) continue;
 
     // Preserve JSON objects natively for the database's JSONB column
@@ -286,7 +286,7 @@ function buildMetadata(log: ParsedLog, mapping: FieldMapping, eventType: string)
   return metadata;
 }
 
-function normalizeLog(log: ParsedLog, jobId: string, detectedType: string, sourceMapping: FieldMapping): NormalizedLog | null {
+export function normalizeLog(log: ParsedLog, jobId: string, detectedType: string, sourceMapping: FieldMapping): NormalizedLog | null {
   try {
     const timestamp = normalizeTimestamp(log, sourceMapping);
     

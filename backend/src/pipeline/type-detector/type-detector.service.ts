@@ -144,7 +144,14 @@ export class TypeDetectorService {
       // 2. Determine the actual winner 
       for (const result of allResults) {
         currentAnalysis[result.type] = result.confidence;
-        if (result.confidence > highestConfidence) {
+        
+        // Tie breaker: if confidences are equal, favor the detector that matched MORE patterns
+        if (
+          result.confidence > highestConfidence ||
+          (result.confidence === highestConfidence &&
+            currentBest &&
+            result.matched.length > currentBest.matched.length)
+        ) {
           highestConfidence = result.confidence;
           currentBest = result;
         }

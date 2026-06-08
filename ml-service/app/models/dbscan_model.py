@@ -29,7 +29,7 @@ class DBSCANModel:
             eps=eps,
             min_samples=min_samples,
             metric=metric,
-            n_jobs=-1
+            n_jobs=None
         )
         
         logger.info(
@@ -65,7 +65,7 @@ class DBSCANModel:
                 eps=self.eps,
                 min_samples=min_samples,
                 metric=self.metric,
-                n_jobs=-1
+                n_jobs=None
             )
         else:
             model = self.model

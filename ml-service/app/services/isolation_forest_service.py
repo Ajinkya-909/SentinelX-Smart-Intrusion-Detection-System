@@ -48,6 +48,9 @@ class IsolationForestService:
             # Use scores directly (model wrapper already scales 0-1 with higher = more anomalous)
             anomaly_scores = np.clip(scores, 0, 1)
             
+            # Pre-compute max absolute values for each feature to avoid redundant calculations
+            max_abs_vals = np.max(np.abs(X_scaled), axis=0)
+            
             # Build results
             results = []
             for i, vector_dict in enumerate(vectors_dict):
@@ -64,14 +67,19 @@ class IsolationForestService:
                 top_features = get_top_features(feature_contributions, top_n=5)
                 
                 # Build top anomalous features list
-                top_anomalous_features = [
-                    FeatureContribution(
-                        feature=name,
-                        value=float(value),
-                        anomalyRatio=float(abs(value) / (max(abs(v) for v in X_scaled[:, j]) + 0.001))
+                top_anomalous_features = []
+                for name, value in top_features.items():
+                    feature_col = feature_names.index(name)
+                    max_abs_val = float(max_abs_vals[feature_col])
+                    anomaly_ratio = float(abs(value) / (max_abs_val + 0.001))
+                    
+                    top_anomalous_features.append(
+                        FeatureContribution(
+                            feature=name,
+                            value=float(value),
+                            anomalyRatio=anomaly_ratio
+                        )
                     )
-                    for name, value in top_features.items()
-                ]
                 
                 # Map to risk
                 risk = map_anomaly_score_to_risk(anomaly_score)

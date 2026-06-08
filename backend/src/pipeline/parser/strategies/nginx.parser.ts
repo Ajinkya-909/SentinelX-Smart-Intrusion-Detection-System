@@ -2,6 +2,8 @@ import { BaseParser } from "./base.parser";
 import { ParsedLog } from "../types";
 
 export class NginxParser extends BaseParser {
+  protected parserName = "NGINX_PARSER";
+
   public parseLine(line: string): ParsedLog | null {
     if (!line || !line.trim()) return null;
 

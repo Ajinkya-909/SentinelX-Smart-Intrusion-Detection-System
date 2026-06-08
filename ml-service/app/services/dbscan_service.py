@@ -44,6 +44,9 @@ class DBSCANService:
             # Get anomaly scores
             anomaly_scores = dbscan_model.get_anomaly_scores(X_scaled, labels)
             
+            # Pre-compute max absolute values for each feature
+            max_abs_vals = np.max(np.abs(X_scaled), axis=0) if X_scaled.shape[0] > 0 else []
+            
             # Build results
             results = []
             for i, vector_dict in enumerate(vectors_dict):
@@ -65,7 +68,7 @@ class DBSCANService:
                 if X_scaled.shape[0] > 1:
                     for name, value in top_features.items():
                         feature_col = feature_names.index(name)
-                        max_abs_val = max(abs(X_scaled[:, feature_col]))
+                        max_abs_val = float(max_abs_vals[feature_col])
                         anomaly_ratio = float(abs(value) / (max_abs_val + 0.001))
                         
                         top_anomalous_features.append(

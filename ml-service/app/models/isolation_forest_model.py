@@ -28,7 +28,7 @@ class IsolationForestModel:
             contamination=contamination,
             n_estimators=n_estimators,
             random_state=random_state,
-            n_jobs=-1
+            n_jobs=None
         )
         
         logger.info(

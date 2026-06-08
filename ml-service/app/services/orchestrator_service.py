@@ -87,10 +87,13 @@ class OrchestratorService:
                 results = OrchestratorService._merge_results(results, dbscan_results)
                 logger.info(f"[ORCHESTRATOR] DBSCAN produced {len(dbscan_results)} results")
             
+            # Create a dictionary mapping entity to its corresponding vector for fast lookup
+            vectors_by_entity = {v.get("entity"): v for v in vectors_dict if v.get("entity")}
+            
             # Apply heuristic boosts for known intrusion patterns, especially useful for small batch sizes
             for r in results:
-                # Find the matching input vector
-                matching_vector = next((v for v in vectors_dict if v.get("entity") == r.entity), None)
+                # Find the matching input vector in O(1) time
+                matching_vector = vectors_by_entity.get(r.entity)
                 if matching_vector:
                     total_boost = 0.0
                     boost_reasons = []
