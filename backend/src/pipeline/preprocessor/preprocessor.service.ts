@@ -126,6 +126,26 @@ export class PreprocessorService {
     return trimmed;
   }
 
+  private splitCsvLine(line: string): string[] {
+    const result: string[] = [];
+    let current = "";
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result.map(col => col.replace(/^"(.*)"$/, '$1'));
+  }
+
   async *preprocessLines(
     filePath: string,
     config: PreprocessingConfig = {},
@@ -136,6 +156,9 @@ export class PreprocessorService {
     const encoding = await this.detectEncoding(filePath);
     const fileStream = this.createFileStream(filePath, encoding);
     const lineReader = this.createLineReader(fileStream);
+
+    const isCsv = filePath.toLowerCase().endsWith(".csv");
+    let csvHeaders: string[] | null = null;
 
     let batchNumber = 0;
     let currentBatch: string[] = [];
@@ -165,7 +188,26 @@ export class PreprocessorService {
         continue;
       }
 
-      currentBatch.push(cleanedLine);
+      let finalLine = cleanedLine;
+
+      if (isCsv) {
+        const columns = this.splitCsvLine(cleanedLine);
+        if (!csvHeaders) {
+          csvHeaders = columns.map((c, i) => c || `column_${i}`);
+          continue; // Skip the header row
+        } else {
+          const obj: Record<string, string> = {};
+          for (let i = 0; i < csvHeaders.length; i++) {
+            const key = csvHeaders[i];
+            if (key) {
+              obj[key] = columns[i] || "";
+            }
+          }
+          finalLine = JSON.stringify(obj);
+        }
+      }
+
+      currentBatch.push(finalLine);
 
       if (currentBatch.length >= batchSize) {
         batchNumber++;

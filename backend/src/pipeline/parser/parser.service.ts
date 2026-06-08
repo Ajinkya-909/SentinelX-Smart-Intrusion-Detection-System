@@ -20,7 +20,7 @@ class ParserService {
     logger.info(`[PARSER_SERVICE] Parsing batch of ${rawLines.length} lines using strategy: ${detectedType}`);
 
     try {
-      const parser = this.selectParser(detectedType);
+      const parser = this.selectParser(detectedType, rawLines);
       
       const result = await parser.parse(rawLines);
       
@@ -46,7 +46,7 @@ class ParserService {
     }
   }
 
-  private selectParser(detectedType: string): BaseParser {
+  private selectParser(detectedType: string, rawLines: string[] = []): BaseParser {
     switch (detectedType) {
       case "NGINX_ACCESS":
       case "NGINX_ERROR":
@@ -63,8 +63,15 @@ class ParserService {
       case "DOCKER_JSON":
         return jsonParser; // Our upgraded JSON parser handles all these envelopes
       case "KEY_VALUE":
-      case "FIREWALL_LOG": // Firewall logs map perfectly to KV extraction
         return keyValueParser;
+      case "FIREWALL_LOG": {
+        // If the logs are JSON-formatted, route to the jsonParser. Otherwise route to the keyValueParser.
+        const firstLine = rawLines.find(line => line && line.trim().length > 0);
+        if (firstLine && firstLine.trim().startsWith("{")) {
+          return jsonParser;
+        }
+        return keyValueParser;
+      }
       case "GENERIC":
       default: 
         return genericParser;

@@ -34,8 +34,12 @@ function extractField(log: Record<string, any>, fieldAliases: string | string[] 
     const keys = alias.split('.');
     let current: any = log;
     for (const key of keys) {
-      if (current === undefined || current === null) break;
-      current = current[key];
+      if (current === undefined || current === null || typeof current !== "object") {
+        current = undefined;
+        break;
+      }
+      const foundKey = Object.keys(current).find(k => k.toLowerCase() === key.toLowerCase());
+      current = foundKey ? current[foundKey] : undefined;
     }
     if (current !== undefined && current !== null && current !== "") {
       return current;

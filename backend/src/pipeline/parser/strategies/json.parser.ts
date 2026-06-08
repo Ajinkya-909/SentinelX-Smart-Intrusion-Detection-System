@@ -15,6 +15,7 @@ export class JsonParser extends BaseParser {
       "EventTime",
       "__REALTIME_TIMESTAMP",
       "_SOURCE_REALTIME_TIMESTAMP",
+      "Time",
     ],
     level: [
       "level",
@@ -34,6 +35,7 @@ export class JsonParser extends BaseParser {
       "description",
       "eventName",
       "MESSAGE",
+      "Message",
     ],
     sourceIp: [
       "ip",
@@ -43,6 +45,8 @@ export class JsonParser extends BaseParser {
       "remote_addr",
       "sourceIPAddress",
       "_IP_ADDRESS",
+      "Src IP",
+      "Src_IP",
     ],
     user: [
       "user",
@@ -53,6 +57,7 @@ export class JsonParser extends BaseParser {
       "userIdentity.userName",
       "userIdentity.arn",
       "_SYSTEMD_USER",
+      "Username",
     ],
     statusCode: ["status", "status_code", "code", "http_status"],
   };
@@ -249,9 +254,22 @@ export class JsonParser extends BaseParser {
         json,
         this.genericMappings.sourceIp,
       );
+      const userRaw = this.extractField(json, this.genericMappings.user);
+      const statusCodeRaw = this.extractField(
+        json,
+        this.genericMappings.statusCode,
+      );
+
+      let parsedDate = new Date();
+      if (timestampRaw) {
+        const d = new Date(timestampRaw);
+        if (!isNaN(d.getTime())) {
+          parsedDate = d;
+        }
+      }
 
       const genericLog: ParsedLog = {
-        timestamp: timestampRaw ? new Date(timestampRaw) : new Date(),
+        timestamp: parsedDate,
         logLevel: levelRaw ? String(levelRaw).toUpperCase() : "INFO",
         message: String(messageRaw),
         raw: line,
@@ -261,9 +279,35 @@ export class JsonParser extends BaseParser {
         },
       };
 
-      // FIX 2: Only assign optional properties if they actually exist to satisfy exactOptionalPropertyTypes
       if (sourceIpRaw) {
         genericLog.sourceIp = String(sourceIpRaw);
+      }
+      if (userRaw) {
+        genericLog.user = String(userRaw);
+      }
+      if (statusCodeRaw !== undefined && statusCodeRaw !== null && statusCodeRaw !== "") {
+        const parsedCode = parseInt(String(statusCodeRaw), 10);
+        if (!isNaN(parsedCode)) {
+          genericLog.statusCode = parsedCode;
+        }
+      }
+
+      // Promote all properties of json to the top-level of genericLog
+      // so extractField()'s dot-notation traversal and normalizer mappings can find them.
+      for (const [key, value] of Object.entries(json)) {
+        if (
+          key === "timestamp" ||
+          key === "logLevel" ||
+          key === "message" ||
+          key === "sourceIp" ||
+          key === "user" ||
+          key === "statusCode" ||
+          key === "raw" ||
+          key === "metadata"
+        ) {
+          continue;
+        }
+        genericLog[key] = value;
       }
 
       return genericLog;
@@ -277,8 +321,12 @@ export class JsonParser extends BaseParser {
       const keys = path.split(".");
       let current = obj;
       for (const key of keys) {
-        if (current === undefined || current === null) break;
-        current = current[key];
+        if (current === undefined || current === null || typeof current !== "object") {
+          current = undefined;
+          break;
+        }
+        const foundKey = Object.keys(current).find(k => k.toLowerCase() === key.toLowerCase());
+        current = foundKey ? current[foundKey] : undefined;
       }
       if (current !== undefined && current !== null && current !== "") {
         return current;

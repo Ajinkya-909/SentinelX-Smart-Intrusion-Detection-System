@@ -82,12 +82,12 @@ export const suricataMapping: FieldMapping = {
 
 // 5. Firewall Mapping
 export const firewallMapping: FieldMapping = {
-  timestamp: ["timestamp", "time", "date"],
-  sourceIp: ["SRC", "src", "source_ip", "sourceIp"],
-  user: ["USER", "user"],
-  logLevel: ["level", "severity", "logLevel"],
-  eventType: ["ACTION", "act", "action"],
-  message: ["message", "msg"],
+  timestamp: ["timestamp", "time", "date", "Time"],
+  sourceIp: ["SRC", "src", "source_ip", "src_ip", "sourceIp", "Src IP", "Src_IP"],
+  user: ["USER", "user", "Username", "user_name"],
+  logLevel: ["level", "severity", "logLevel", "Log subtype"],
+  eventType: ["ACTION", "act", "action", "Log subtype", "log_type"],
+  message: ["message", "msg", "Message"],
 };
 
 // 6. Windows Event Mapping
@@ -108,20 +108,22 @@ export const windowsEventMapping: FieldMapping = {
 
 // 7. Generic JSON Mapping
 export const jsonMapping: FieldMapping = {
-  timestamp: ["timestamp", "@timestamp", "time", "ts", "date"],
+  timestamp: ["timestamp", "@timestamp", "time", "ts", "date", "Time"],
   sourceIp: [
     "ip",
     "source_ip",
+    "src_ip",
     "client_ip",
     "remote_addr",
-    "src_ip",
     "sourceIp",
+    "Src IP",
+    "Src_IP",
   ],
-  user: ["user", "username", "uid", "user_id", "actor"],
-  logLevel: ["level", "severity", "log_level", "priority", "logLevel"],
+  user: ["user", "username", "uid", "user_id", "actor", "Username"],
+  logLevel: ["level", "severity", "log_level", "priority", "logLevel", "Log subtype"],
   statusCode: ["status", "status_code", "http_status", "code"],
-  message: ["message", "msg", "text", "description", "event"],
-  eventType: ["event_type", "type", "event", "action"],
+  message: ["message", "msg", "text", "description", "event", "Message"],
+  eventType: ["event_type", "type", "event", "action", "Log subtype", "log_type"],
 };
 
 // Combined mapping registry
@@ -298,8 +300,8 @@ export function normalizeEventType(value: any): string {
     return "PORT_SCAN";
 
   // Firewall Actions
-  if (["permit", "accept", "allow"].includes(lower)) return "NETWORK_ALLOW";
-  if (["deny", "drop", "block", "blocked"].includes(lower))
+  if (["permit", "accept", "allow", "allowed"].includes(lower)) return "NETWORK_ALLOW";
+  if (["deny", "drop", "block", "blocked", "denied"].includes(lower))
     return "NETWORK_BLOCK";
 
   // HTTP mappings

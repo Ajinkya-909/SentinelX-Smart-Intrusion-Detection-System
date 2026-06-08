@@ -1,3 +1,4 @@
 plan/
+/sentinelx_test_logs
 .env
 node_modules/
