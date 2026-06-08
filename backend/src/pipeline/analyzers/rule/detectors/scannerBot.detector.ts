@@ -14,6 +14,8 @@ export const scannerBotDetector: IDetector = {
       "w3af", "arachni", "netsparker", "nessus"
     ];
 
+    const findingsMap = new Map<string, any>();
+
     for (const log of ctx.logs) {
       const userAgent = log.metadata?.client?.userAgent?.toLowerCase();
       
@@ -21,31 +23,50 @@ export const scannerBotDetector: IDetector = {
 
       for (const scanner of knownScannerAgents) {
         if (userAgent.includes(scanner)) {
-          findings.push(
-              createFinding({
-                jobId: ctx.jobId,
-                analyzer: "rule",
-                finding_type: "SCANNER_BOT_DETECTED",
-                severity: FindingSeverity.MEDIUM,
-              confidence: 0.99, // 99% confident if they broadcast a known malicious user-agent
-              title: "Automated Security Scanner Detected",
-              summary: `IP ${log.ip_address} is using known security scanner: ${scanner}`,
-              log_references: [log.id],
-              affected_entities: {
-                ip_address: log.ip_address,
-              },
-              evidence: {
-                user_agent: userAgent,
-                scanner_family: scanner
-              },
-              metadata: { rule_id: "rule_bot_1" },
-              recommendation: "Add IP to WAF blocklist. Scanners are often precursors to targeted exploitation.",
-            })
-          );
+          
+          const ip = log.ip_address || "unknown";
+          const key = `${ip}_${scanner}`;
+
+          if (!findingsMap.has(key)) {
+            findingsMap.set(key, {
+              ip,
+              scanner,
+              userAgent,
+              logs: []
+            });
+          }
+
+          findingsMap.get(key).logs.push(log);
           break; // Report once per log
         }
       }
     }
+
+    for (const [key, entry] of findingsMap) {
+      findings.push(
+        createFinding({
+          jobId: ctx.jobId,
+          analyzer: "rule",
+          finding_type: "SCANNER_BOT_DETECTED",
+          severity: FindingSeverity.MEDIUM,
+          confidence: 0.99, // 99% confident if they broadcast a known malicious user-agent
+          title: "Automated Security Scanner Detected",
+          summary: `IP ${entry.ip} is using known security scanner: ${entry.scanner} (${entry.logs.length} requests)`,
+          log_references: entry.logs.slice(0, 50).map((l: any) => l.id),
+          affected_entities: {
+            ip_address: entry.ip,
+          },
+          evidence: {
+            user_agent: entry.userAgent,
+            scanner_family: entry.scanner,
+            occurrences: entry.logs.length,
+          },
+          metadata: { rule_id: "rule_bot_1" },
+          recommendation: "Add IP to WAF blocklist. Scanners are often precursors to targeted exploitation.",
+        })
+      );
+    }
+
     return findings;
   },
 };

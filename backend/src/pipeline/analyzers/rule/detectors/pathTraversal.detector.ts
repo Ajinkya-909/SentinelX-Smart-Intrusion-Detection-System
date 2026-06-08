@@ -10,6 +10,8 @@ export const pathTraversalDetector: IDetector = {
     const findings: AnalyzerFinding[] = [];
     const config = loadAnalyzerConfig();
 
+    const findingsMap = new Map<string, any>();
+
     for (const log of ctx.logs) {
       if (!log.event_type.startsWith("HTTP_")) continue;
 
@@ -28,34 +30,58 @@ export const pathTraversalDetector: IDetector = {
           const statusCode = log.metadata?.request?.statusCode;
           const isSuccessful = statusCode === 200;
 
-          findings.push(
-            createFinding({
-              jobId: ctx.jobId,
-              analyzer: "rule",
-              finding_type: "MALICIOUS_PAYLOAD_PATH_TRAVERSAL",
-              severity: isSuccessful ? FindingSeverity.CRITICAL : FindingSeverity.HIGH,
-              confidence: 0.95,
-              title: "Directory Traversal Attempt",
-              summary: `Path traversal attempt detected from ${log.ip_address || 'unknown IP'}`,
-              log_references: [log.id],
-              affected_entities: {
-                source_ip: log.ip_address,
-                target_endpoint: log.metadata?.action?.endpoint || "unknown",
-              },
-              evidence: {
-                pattern_matched: pattern,
-                payload: checkString.substring(0, 200),
-                response_code: statusCode,
-                read_likely_successful: isSuccessful,
-              },
-              metadata: { rule_id: "rule_pt_1" },
-              recommendation: "CRITICAL: If HTTP 200, an attacker may have read arbitrary files on the server. Block IP immediately.",
-            })
-          );
+          const ip = log.ip_address || "unknown";
+          const key = `${ip}_${pattern}`;
+
+          if (!findingsMap.has(key)) {
+            findingsMap.set(key, {
+              ip,
+              pattern,
+              endpoint: log.metadata?.action?.endpoint || "unknown",
+              statusCode,
+              isSuccessful,
+              payload: checkString.substring(0, 200),
+              logs: []
+            });
+          }
+
+          const entry = findingsMap.get(key);
+          entry.logs.push(log);
+          if (isSuccessful) entry.isSuccessful = true;
+
           break;
         }
       }
     }
+
+    for (const [key, entry] of findingsMap) {
+      findings.push(
+        createFinding({
+          jobId: ctx.jobId,
+          analyzer: "rule",
+          finding_type: "MALICIOUS_PAYLOAD_PATH_TRAVERSAL",
+          severity: entry.isSuccessful ? FindingSeverity.CRITICAL : FindingSeverity.HIGH,
+          confidence: 0.95,
+          title: "Directory Traversal Attempt",
+          summary: `Path traversal pattern '${entry.pattern}' detected from ${entry.ip} (${entry.logs.length} occurrences)`,
+          log_references: entry.logs.slice(0, 50).map((l: any) => l.id),
+          affected_entities: {
+            source_ip: entry.ip,
+            target_endpoint: entry.endpoint,
+          },
+          evidence: {
+            pattern_matched: entry.pattern,
+            payload: entry.payload,
+            occurrences: entry.logs.length,
+            response_code: entry.statusCode,
+            read_likely_successful: entry.isSuccessful,
+          },
+          metadata: { rule_id: "rule_pt_1" },
+          recommendation: "CRITICAL: If HTTP 200, an attacker may have read arbitrary files on the server. Block IP immediately.",
+        })
+      );
+    }
+
     return findings;
   },
 };

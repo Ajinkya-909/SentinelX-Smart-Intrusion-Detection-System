@@ -7,7 +7,7 @@ import { normalizeLog } from "../src/pipeline/normalizer/normalizer.service";
 import { getFieldMapping } from "../src/pipeline/normalizer/mappings";
 
 // You can change this path to any file you want to test
-const TEST_FILE_PATH = "d:\\CodingContent\\Web Development\\SentinelX — Smart Intrusion Detection System\\sentinelx_test_logs\\Apache_2k.log";
+const TEST_FILE_PATH = "d:\\CodingContent\\Web Development\\SentinelX — Smart Intrusion Detection System\\sentinelx_test_logs\\sample.log";
 const OUTPUT_FILE_PATH = path.join(__dirname, "..", "scratch", "pipeline_test_output.json");
 
 async function runTest() {
