@@ -539,8 +539,8 @@ export const insightsService = {
         f.referenced_logs[0]?.timestamp || f.detected_at || new Date(),
       ).getTime(),
     );
-    const minTs = Math.min(...resolvedTimestamps);
-    const maxTs = Math.max(...resolvedTimestamps);
+    const minTs = resolvedTimestamps.reduce((min, ts) => ts < min ? ts : min, Infinity);
+    const maxTs = resolvedTimestamps.reduce((max, ts) => ts > max ? ts : max, -Infinity);
 
     return {
       points,
@@ -716,17 +716,20 @@ export const insightsService = {
       .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
       .map(([timestamp, count]) => ({ timestamp, event_count: count }));
 
-    const sortedLogs = [...logs].sort(
-      (a, b) =>
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-    );
+    let minTs = Infinity;
+    let maxTs = -Infinity;
+    for (const log of logs) {
+      const ts = new Date(log.timestamp).getTime();
+      if (ts < minTs) minTs = ts;
+      if (ts > maxTs) maxTs = ts;
+    }
 
     return {
       points,
       total_events: logs.length,
       time_range: {
-        start: new Date(sortedLogs[0].timestamp).toISOString(),
-        end: new Date(sortedLogs[sortedLogs.length - 1].timestamp).toISOString(),
+        start: new Date(minTs).toISOString(),
+        end: new Date(maxTs).toISOString(),
       },
     };
   },

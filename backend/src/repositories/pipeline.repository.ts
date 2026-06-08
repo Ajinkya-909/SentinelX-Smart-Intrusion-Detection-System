@@ -36,13 +36,12 @@ const pipelineRepository = {
       `[PIPELINE REPO] Inserting ${findings.length} analyzer findings`,
     );
 
-    const insertedFindings = [];
     const skippedFindings = [];
     let successCount = 0;
     let errorCount = 0;
+    const validFindings = [];
 
-    // Insert each finding individually to allow partial success
-    // This prevents one bad finding from blocking the entire batch
+    // Filter and prepare valid findings
     for (const finding of findings) {
       try {
         // Validate required fields
@@ -88,51 +87,50 @@ const pipelineRepository = {
           continue;
         }
 
-        // Attempt to insert
-        const inserted = await prisma.analyzer_findings.upsert({
-          where: {
-            job_id_fingerprint: {
-              job_id: finding.job_id,
-              fingerprint: finding.fingerprint,
-            },
-          },
-          update: {
-            // On duplicate fingerprint, just update the finding (in case it's a re-run)
-            updated_at: new Date(),
-          },
-          create: {
-            job_id: finding.job_id,
-            fingerprint: finding.fingerprint,
-            analyzer: finding.analyzer,
-            analyzer_version: finding.analyzer_version || null,
-            finding_type: finding.finding_type,
-            category: finding.category || null,
-            severity: finding.severity,
-            confidence: finding.confidence || null,
-            title: finding.title || null,
-            summary: finding.summary || null,
-            recommendation: finding.recommendation || null,
-            log_references: finding.log_references || null,
-            affected_entities: finding.affected_entities || null,
-            evidence: finding.evidence || null,
-            metadata: finding.metadata || null,
-          },
+        validFindings.push({
+          job_id: finding.job_id,
+          fingerprint: finding.fingerprint,
+          analyzer: finding.analyzer,
+          analyzer_version: finding.analyzer_version || null,
+          finding_type: finding.finding_type,
+          category: finding.category || null,
+          severity: finding.severity,
+          confidence: finding.confidence || null,
+          title: finding.title || null,
+          summary: finding.summary || null,
+          recommendation: finding.recommendation || null,
+          log_references: finding.log_references || null,
+          affected_entities: finding.affected_entities || null,
+          evidence: finding.evidence || null,
+          metadata: finding.metadata || null,
         });
-
-        insertedFindings.push(inserted);
-        successCount++;
       } catch (error) {
         logger.error(
-          `[PIPELINE REPO] Error inserting finding: ${error instanceof Error ? error.message : String(error)}`,
+          `[PIPELINE REPO] Error processing finding: ${error instanceof Error ? error.message : String(error)}`,
         );
         skippedFindings.push({
           finding,
           reason: error instanceof Error ? error.message : String(error),
         });
         errorCount++;
-        // Continue with next finding instead of throwing
-        continue;
       }
+    }
+
+    try {
+      const BATCH_SIZE = 5_000;
+      for (let i = 0; i < validFindings.length; i += BATCH_SIZE) {
+        const chunk = validFindings.slice(i, i + BATCH_SIZE);
+        await prisma.analyzer_findings.createMany({
+          data: chunk,
+          skipDuplicates: true,
+        });
+        successCount += chunk.length;
+      }
+    } catch (error) {
+      logger.error(
+        `[PIPELINE REPO] Error inserting findings batch: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw error;
     }
 
     logger.info(
@@ -143,7 +141,7 @@ const pipelineRepository = {
       total_requested: findings.length,
       total_inserted: successCount,
       total_skipped: errorCount,
-      inserted_findings: insertedFindings,
+      inserted_findings: [],
       skipped_findings: skippedFindings,
     };
   },

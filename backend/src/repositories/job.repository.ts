@@ -97,11 +97,19 @@ const jobRepository = {
    * @param jobId - UUID of the job to delete
    * @returns - The deleted Job object
    */
-  async deleteJob(jobId: string): Promise<Job> {
-    const deletedJob = await prisma.jobs.delete({
-      where: { id: jobId },
-    });
-    return deletedJob as Job;
+  async deleteJob(jobId: string): Promise<Job | null> {
+    try {
+      const deletedJob = await prisma.jobs.delete({
+        where: { id: jobId },
+      });
+      return deletedJob as Job;
+    } catch (error: any) {
+      // Prisma error P2025: Record to delete does not exist
+      if (error.code === 'P2025') {
+        return null;
+      }
+      throw error;
+    }
   },
 
   /**
@@ -164,7 +172,7 @@ const jobRepository = {
       prisma.insights.deleteMany({
         where: { job_id: jobId },
       }),
-    ]);
+    ], { timeout: 120000 });
 
     return updatedJob as Job;
   },
@@ -284,7 +292,7 @@ const jobRepository = {
       prisma.insights.deleteMany({
         where: { job_id: jobId },
       }),
-    ]);
+    ], { timeout: 300000 });
 
     return updatedJob as Job;
   },

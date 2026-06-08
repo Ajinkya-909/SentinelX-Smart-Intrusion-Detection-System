@@ -118,11 +118,12 @@ export const jsonMapping: FieldMapping = {
     "sourceIp",
     "Src IP",
     "Src_IP",
+    "foreign_ip",
   ],
   user: ["user", "username", "uid", "user_id", "actor", "Username"],
   logLevel: ["level", "severity", "log_level", "priority", "logLevel", "Log subtype"],
-  statusCode: ["status", "status_code", "http_status", "code"],
-  message: ["message", "msg", "text", "description", "event", "Message"],
+  statusCode: ["status", "status_code", "http_status", "code", "column_0"],
+  message: ["message", "msg", "text", "description", "event", "Message", "column_1"],
   eventType: ["event_type", "type", "event", "action", "Log subtype", "log_type"],
 };
 

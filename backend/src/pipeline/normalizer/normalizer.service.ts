@@ -154,14 +154,10 @@ function buildRequestMetadata(log: ParsedLog, mapping: FieldMapping): RequestMet
 
 function buildSecurityMetadata(log: ParsedLog, mapping: FieldMapping, eventType: string): SecurityMetadata | undefined {
   const statusCode = extractField(log, mapping.statusCode);
+  const user = extractField(log, mapping.user) || log.user;
 
   // Broad auth-event check: covers HTTP status codes, normalized syslog event types,
-  // and CloudTrail/Windows auth events. The previous version only matched "LOGIN"
-  // and HTTP 401/403, which meant syslog "Failed password" / "Accepted publickey"
-  // events (normalized to AUTH_FAILURE / AUTH_SUCCESS / SESSION_START / SESSION_END)
-  // never got security metadata, leaving authEvents empty for Linux auth logs and
-  // making all auth-based detectors (brute force, account takeover, impossible
-  // velocity) fire zero findings on syslog sources.
+  // and CloudTrail/Windows auth events.
   const isAuthEvent =
     eventType.includes("LOGIN")       ||
     eventType.includes("AUTH")        ||
@@ -171,7 +167,15 @@ function buildSecurityMetadata(log: ParsedLog, mapping: FieldMapping, eventType:
     eventType === "PERMISSION_DENIED" ||
     eventType === "SUDO"              ||
     statusCode === 401                ||
-    statusCode === 403;
+    statusCode === 403                ||
+    (user && statusCode && (
+      String(statusCode).toLowerCase() === "success" ||
+      String(statusCode).toLowerCase() === "succeeded" ||
+      String(statusCode).toLowerCase() === "ok" ||
+      String(statusCode).toLowerCase() === "failed" ||
+      String(statusCode).toLowerCase() === "failure" ||
+      String(statusCode).toLowerCase() === "fail"
+    ));
 
   if (!isAuthEvent) return undefined;
 
@@ -181,22 +185,43 @@ function buildSecurityMetadata(log: ParsedLog, mapping: FieldMapping, eventType:
     eventType === "LOGIN_SUCCESS" ||
     eventType === "SESSION_START" ||
     eventType === "LOGON_SUCCESS" ||
-    (statusCode !== undefined && String(statusCode).startsWith("2"));
+    (statusCode !== undefined && (
+      String(statusCode).startsWith("2") ||
+      String(statusCode).toLowerCase() === "success" ||
+      String(statusCode).toLowerCase() === "succeeded" ||
+      String(statusCode).toLowerCase() === "ok"
+    ));
 
   // Determine failure reason with priority: explicit event type → HTTP status code
   let failureReason: string | undefined;
-  if (eventType === "AUTH_FAILURE" || eventType === "LOGIN_FAILURE") {
+  if (
+    eventType === "AUTH_FAILURE" || 
+    eventType === "LOGIN_FAILURE" ||
+    (statusCode && (
+      String(statusCode).toLowerCase() === "failed" ||
+      String(statusCode).toLowerCase() === "failure" ||
+      String(statusCode).toLowerCase() === "fail"
+    ))
+  ) {
     failureReason = "invalid_credentials";
-  } else if (eventType === "PERMISSION_DENIED") {
+  } else if (eventType === "PERMISSION_DENIED" || statusCode === 403) {
     failureReason = "access_denied";
   } else if (statusCode === 401) {
     failureReason = "invalid_credentials";
-  } else if (statusCode === 403) {
-    failureReason = "access_denied";
   }
 
+  const isFailed = 
+    eventType === "AUTH_FAILURE" || 
+    eventType === "LOGIN_FAILURE" || 
+    (statusCode !== undefined && (
+      String(statusCode).toLowerCase() === "failed" || 
+      String(statusCode).toLowerCase() === "failure" || 
+      String(statusCode).toLowerCase() === "fail" || 
+      String(statusCode) === "401"
+    ));
+
   return {
-    authenticated: statusCode !== 401 && eventType !== "AUTH_FAILURE" && eventType !== "LOGIN_FAILURE",
+    authenticated: !isFailed && statusCode !== 401,
     authSuccess: isSuccess,
     failureReason,
   };
@@ -287,6 +312,20 @@ function normalizeLog(log: ParsedLog, jobId: string, detectedType: string, sourc
     } else {
       const methodRaw = extractField(log, sourceMapping.method) || extractField(log, sourceMapping.eventType);
       eventType = normalizeEventType(methodRaw);
+    }
+
+    // Upgrade for authentication logs parsed as JSON/CSV
+    if (eventType === "GENERIC_EVENT" || eventType === "UNKNOWN_EVENT") {
+      const user = extractField(log, sourceMapping.user) || log.user;
+      const status = extractField(log, sourceMapping.statusCode);
+      if (user && status) {
+        const statusStr = String(status).toLowerCase().trim();
+        if (statusStr === "success" || statusStr === "succeeded" || statusStr === "ok") {
+          eventType = "LOGIN_SUCCESS";
+        } else if (statusStr === "failed" || statusStr === "failure" || statusStr === "fail") {
+          eventType = "LOGIN_FAILED";
+        }
+      }
     }
 
     const metadata = buildMetadata(log, sourceMapping, eventType);

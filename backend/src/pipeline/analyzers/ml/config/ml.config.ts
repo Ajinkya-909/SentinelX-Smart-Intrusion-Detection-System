@@ -13,7 +13,7 @@ export const mlConfig = {
       health: "/health",
       analyze: "/analyze", // SINGLE endpoint - FastAPI orchestrates internally which models to run
     },
-    timeout: 30000, // 30 seconds for ML analysis
+    timeout: 300000, // 5 minutes for ML analysis
     retries: 2,
   },
 

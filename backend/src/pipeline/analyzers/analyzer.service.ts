@@ -40,7 +40,7 @@ export const analyzerService = {
 
       // ===== STEP 1: SLIDING WINDOW LOOP =====
       // Consumes chunks from the generator built in Phase 2
-      for await (const windowLogs of this.fetchLogsInWindows(jobId)) {
+      for await (const windowLogs of this.fetchLogsInWindows(jobId, 15000, 1000)) {
         batchCount++;
         logger.info(
           `[ANALYZER SERVICE] 📦 Processing Window #${batchCount} (${windowLogs.length} logs)`,

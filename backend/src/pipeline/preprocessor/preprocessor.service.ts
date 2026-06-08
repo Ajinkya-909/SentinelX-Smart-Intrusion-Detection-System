@@ -146,6 +146,51 @@ export class PreprocessorService {
     return result.map(col => col.replace(/^"(.*)"$/, '$1'));
   }
 
+  private hasCsvHeader(columns: string[]): boolean {
+    if (columns.length === 0) return false;
+
+    let dataLooks = 0;
+
+    for (const col of columns) {
+      const trimmed = col.trim();
+      
+      // If a column is empty, it could be a blank header or missing value.
+      if (trimmed === "") {
+        continue;
+      }
+
+      // If a column is a number, it's data
+      if (!isNaN(Number(trimmed))) {
+        dataLooks++;
+        continue;
+      }
+
+      // IP address check
+      if (/^(\d{1,3}\.){3}\d{1,3}$/.test(trimmed)) {
+        dataLooks++;
+        continue;
+      }
+
+      // Domain name check: contains a dot, is not a simple identifier, and does not match a typical nested header name.
+      if (trimmed.includes(".") && !/^[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+$/.test(trimmed)) {
+        dataLooks++;
+        continue;
+      }
+
+      // Timestamp check
+      if (
+        /\d{4}-\d{2}-\d{2}/.test(trimmed) || 
+        /\d{2}\/\d{2}\/\d{4}/.test(trimmed) || 
+        /\d{2}:\d{2}:\d{2}/.test(trimmed)
+      ) {
+        dataLooks++;
+        continue;
+      }
+    }
+
+    return dataLooks === 0;
+  }
+
   async *preprocessLines(
     filePath: string,
     config: PreprocessingConfig = {},
@@ -154,6 +199,73 @@ export class PreprocessorService {
     const maxLineLength = config.maxLineLengthBytes || 100 * 1024;
 
     const encoding = await this.detectEncoding(filePath);
+
+    // Try single JSON file parsing
+    let isSingleJsonArray = false;
+    let jsonArrayItems: string[] = [];
+
+    const isJson = filePath.toLowerCase().endsWith(".json") && 
+                   !filePath.toLowerCase().endsWith(".jsonl") && 
+                   !filePath.toLowerCase().endsWith(".ndjson");
+
+    if (isJson) {
+      try {
+        const fileStat = await fsPromises.stat(filePath);
+        const MAX_SINGLE_PARSE = 32 * 1024 * 1024; // 32MB
+
+        if (fileStat.size <= MAX_SINGLE_PARSE) {
+          let fileContent = await fsPromises.readFile(filePath, encoding as BufferEncoding);
+          if (fileContent.startsWith("\ufeff")) {
+            fileContent = fileContent.slice(1);
+          }
+          const parsed = JSON.parse(fileContent);
+          if (Array.isArray(parsed)) {
+            isSingleJsonArray = true;
+            jsonArrayItems = parsed.map(item => typeof item === "object" ? JSON.stringify(item) : String(item));
+          } else if (parsed && typeof parsed === "object") {
+            isSingleJsonArray = true;
+            jsonArrayItems = [JSON.stringify(parsed)];
+          }
+        } else {
+          logger.info(`[PREPROCESS] JSON file ${filePath} is larger than ${Math.round(MAX_SINGLE_PARSE/1024/1024)}MB (${fileStat.size} bytes). Falling back to line-by-line.`);
+        }
+      } catch (err) {
+        logger.info(`[PREPROCESS] JSON file ${filePath} could not be parsed as a single JSON document. Falling back to line-by-line.`);
+      }
+    }
+
+    if (isSingleJsonArray) {
+      let batchNumber = 0;
+      let totalProcessed = 0;
+      for (let i = 0; i < jsonArrayItems.length; i += batchSize) {
+        const currentBatch = jsonArrayItems.slice(i, i + batchSize);
+        batchNumber++;
+        totalProcessed += currentBatch.length;
+        const estimatedSize = currentBatch.reduce(
+          (sum, line) => sum + Buffer.byteLength(line, "utf8"),
+          0,
+        );
+        yield {
+          batchNumber,
+          rawLines: currentBatch,
+          metadata: {
+            batchNumber,
+            encoding,
+            lineCount: currentBatch.length,
+            estimatedSizeBytes: estimatedSize,
+            linesRemovedAsCorrupt: 0,
+            emptyLinesRemoved: 0,
+            whitespaceLinesRemoved: 0,
+          },
+          totalProcessedSoFar: totalProcessed,
+        };
+      }
+      logger.info(
+        `[PREPROCESS] Complete JSON array: ${totalProcessed} lines across ${batchNumber} batches`,
+      );
+      return;
+    }
+
     const fileStream = this.createFileStream(filePath, encoding);
     const lineReader = this.createLineReader(fileStream);
 
@@ -193,18 +305,22 @@ export class PreprocessorService {
       if (isCsv) {
         const columns = this.splitCsvLine(cleanedLine);
         if (!csvHeaders) {
-          csvHeaders = columns.map((c, i) => c || `column_${i}`);
-          continue; // Skip the header row
-        } else {
-          const obj: Record<string, string> = {};
-          for (let i = 0; i < csvHeaders.length; i++) {
-            const key = csvHeaders[i];
-            if (key) {
-              obj[key] = columns[i] || "";
-            }
+          if (this.hasCsvHeader(columns)) {
+            csvHeaders = columns.map((c, i) => c || `column_${i}`);
+            continue; // Skip the header row
+          } else {
+            csvHeaders = columns.map((_, i) => `column_${i}`);
           }
-          finalLine = JSON.stringify(obj);
         }
+
+        const obj: Record<string, string> = {};
+        for (let i = 0; i < csvHeaders.length; i++) {
+          const key = csvHeaders[i];
+          if (key) {
+            obj[key] = columns[i] || "";
+          }
+        }
+        finalLine = JSON.stringify(obj);
       }
 
       currentBatch.push(finalLine);
