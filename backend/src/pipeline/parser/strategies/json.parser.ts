@@ -193,6 +193,7 @@ export class JsonParser extends BaseParser {
           metadata: {
             wrapper: "windows_event",
             event_id: json.System?.EventID || json.EventID,
+            EventID: json.System?.EventID || json.EventID,
             event_type: this.mapWindowsEventIdToType(json.System?.EventID || json.EventID),
             channel: json.System?.Channel || json.Channel,
             provider: json.System?.Provider?.Name || json.Provider,
