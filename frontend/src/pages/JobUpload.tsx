@@ -104,7 +104,7 @@ export default function JobUpload() {
     // Auto-fill run configuration identifier context if name is empty
     if (!jobName) {
       const cleanName = file.name.toUpperCase().replace(/[^A-Z0-9]/g, "_");
-      setJobName(`SEC_AUDIT_${cleanName.slice(0, 15)}`);
+      setJobName(`${cleanName.slice(0, 20)}`);
     }
   };
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Upload, Trash2, RotateCcw, ArrowRight } from "lucide-react";
+import { Search, Upload, Trash2, RotateCcw, ArrowRight, Loader2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -22,6 +22,18 @@ import {
 } from "@/components/ui/pagination";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
 import jobService from "@/services/job";
 import { Job, JobListResponse } from "@/types/job";
 
@@ -29,6 +41,7 @@ const ROWS_PER_PAGE = 10;
 
 const Jobs: React.FC = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -118,16 +131,23 @@ const Jobs: React.FC = () => {
     e: React.MouseEvent,
   ): Promise<void> => {
     e.stopPropagation();
-    if (!confirm("Are you sure you want to delete this job?")) return;
 
     try {
       setActionLoading(jobId);
       await jobService.deleteJob(jobId);
       setJobs(jobs.filter((job) => job.jobId !== jobId));
       setTotalJobs(Math.max(0, totalJobs - 1));
+      toast({
+        title: "Job Deleted",
+        description: "The job has been deleted successfully.",
+      });
     } catch (err) {
       console.error("Error deleting job:", err);
-      alert("Failed to delete job");
+      toast({
+        title: "Error",
+        description: "Failed to delete job.",
+        variant: "destructive",
+      });
     } finally {
       setActionLoading(null);
     }
@@ -143,9 +163,17 @@ const Jobs: React.FC = () => {
       setActionLoading(jobId);
       const updatedJob = await jobService.retryJob(jobId);
       setJobs(jobs.map((job) => (job.jobId === jobId ? updatedJob : job)));
+      toast({
+        title: "Analysis Restarted",
+        description: "The job has been queued for analysis.",
+      });
     } catch (err) {
       console.error("Error retrying job:", err);
-      alert("Failed to retry job");
+      toast({
+        title: "Error",
+        description: "Failed to retry job.",
+        variant: "destructive",
+      });
     } finally {
       setActionLoading(null);
     }
@@ -339,16 +367,43 @@ console.log(filteredJobs)
                         <ArrowRight size={16} />
                       </Button>
                     )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={(e) => handleDelete(job.jobId, e)}
-                      disabled={actionLoading === job.jobId}
-                      className="text-red-400 hover:bg-red-900/20 hover:text-red-300"
-                      title="Delete job"
-                    >
-                      <Trash2 size={16} />
-                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => e.stopPropagation()}
+                          disabled={actionLoading === job.jobId}
+                          className="text-red-400 hover:bg-red-900/20 hover:text-red-300"
+                          title="Delete job"
+                        >
+                          {actionLoading === job.jobId ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 size={16} />
+                          )}
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="border-gray-800 bg-[#121212] text-white">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete job log?</AlertDialogTitle>
+                          <AlertDialogDescription className="text-gray-400">
+                            Are you sure you want to delete this job? This action cannot be undone and will permanently delete the log file and all ML analysis results.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel className="border-gray-800 bg-[#1E1E1E] text-white hover:bg-gray-800 hover:text-white">
+                            Cancel
+                          </AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={(e) => handleDelete(job.jobId, e)}
+                            className="bg-red-600 hover:bg-red-700 text-white"
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </TableCell>
                 </TableRow>
               ))

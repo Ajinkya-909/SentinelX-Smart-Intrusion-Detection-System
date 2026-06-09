@@ -15,6 +15,7 @@ import authService, {
   User,
   SignupRequest,
   LoginRequest,
+  UpdateUserRequest,
 } from "@/services/auth";
 
 interface AuthContextType {
@@ -27,6 +28,8 @@ interface AuthContextType {
   logout: () => Promise<void>;
   clearError: () => void;
   refreshUser: () => Promise<void>;
+  updateProfile: (data: UpdateUserRequest) => Promise<void>;
+  deleteAccount: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -171,6 +174,56 @@ useEffect(() => {
   }, []);
 
   /**
+   * Update user profile
+   */
+  const updateProfile = useCallback(async (data: UpdateUserRequest) => {
+    if (!user) throw new Error("No authenticated user");
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await authService.updateUser(user.id, data);
+      if (!response.success) {
+        throw new Error(response.message || "Failed to update profile");
+      }
+      setUser(response.data);
+      authService.setUser(response.data);
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "An error occurred during update";
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  /**
+   * Delete user account
+   */
+  const deleteAccount = useCallback(async () => {
+    if (!user) throw new Error("No authenticated user");
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await authService.deleteUser(user.id);
+      if (!response.success) {
+        throw new Error(response.message || "Failed to delete account");
+      }
+      authService.clearAuthToken();
+      setUser(null);
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "An error occurred during account deletion";
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  /**
    * Clear error message
    */
   const clearError = useCallback(() => {
@@ -189,6 +242,8 @@ useEffect(() => {
     logout,
     clearError,
     refreshUser,
+    updateProfile,
+    deleteAccount,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
