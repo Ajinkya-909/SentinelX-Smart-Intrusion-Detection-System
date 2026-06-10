@@ -33,6 +33,9 @@ export class ApacheParser extends BaseParser {
 
       const timestamp = this.parseApacheErrorTimestamp(rawTimestamp);
 
+      // Classify the event type from message content (like syslog parser does)
+      const eventType = this.classifyApacheErrorEvent(cleanMessage, rawLevel);
+
       const log: ParsedLog = {
         timestamp,
         logLevel: this.mapApacheLogLevel(rawLevel),
@@ -40,6 +43,7 @@ export class ApacheParser extends BaseParser {
         raw: line,
         metadata: {
           log_type: "error",
+          event_type: eventType,
           module: moduleName || undefined,
           pid: pid ? parseInt(pid, 10) : undefined,
         },
@@ -141,6 +145,65 @@ export class ApacheParser extends BaseParser {
       default:
         return "INFO";
     }
+  }
+
+  /**
+   * Classifies Apache error log messages into semantic event types.
+   * This is the equivalent of what the syslog parser does at line 101-110
+   * with its actionMatch pattern — without this, the normalizer receives
+   * no event_type and every line becomes UNKNOWN_EVENT.
+   */
+  private classifyApacheErrorEvent(message: string, rawLevel: string): string {
+    const lower = message.toLowerCase();
+
+    // --- Access / Permission errors (highest priority — security relevant) ---
+    if (lower.includes("directory index forbidden") || lower.includes("client denied"))
+      return "ACCESS_DENIED";
+    if (lower.includes("access denied") || lower.includes("permission denied"))
+      return "PERMISSION_DENIED";
+    if (lower.includes("file does not exist") || lower.includes("file not found"))
+      return "FILE_NOT_FOUND";
+    if (lower.includes("authentication") && lower.includes("failed"))
+      return "AUTH_FAILURE";
+    if (lower.includes("script not found") || lower.includes("not found"))
+      return "FILE_NOT_FOUND";
+
+    // --- Service lifecycle ---
+    if (lower.includes("configured") && (lower.includes("resuming") || lower.includes("apache")))
+      return "SERVICE_START";
+    if (lower.includes("caught sig") || lower.includes("shutting down") || lower.includes("graceful stop"))
+      return "SERVICE_STOP";
+    if (lower.includes("restart"))
+      return "SERVICE_RESTART";
+
+    // --- Worker / process management ---
+    if (lower.includes("workerenv.init()") && lower.includes("ok"))
+      return "SERVICE_INIT";
+    if (lower.includes("workerenv") && lower.includes("error state"))
+      return "MODULE_ERROR";
+    if (lower.includes("jk2_init()") || lower.includes("found child"))
+      return "PROCESS_SPAWN";
+    if (lower.includes("child process") && lower.includes("exit"))
+      return "PROCESS_EXIT";
+
+    // --- Module / config errors ---
+    if (lower.includes("invalid command") || lower.includes("syntax error"))
+      return "CONFIG_ERROR";
+    if (lower.includes("timeout") || lower.includes("timed out"))
+      return "TIMEOUT";
+    if (lower.includes("connection refused") || lower.includes("connection reset"))
+      return "CONNECTION_CLOSED";
+    if (lower.includes("proxy") && lower.includes("error"))
+      return "PROXY_ERROR";
+
+    // --- Fallback based on severity level ---
+    // Even if we can't classify the exact event, "APACHE_ERROR" is infinitely
+    // more useful than "UNKNOWN_EVENT" for the analyzers and insights
+    if (rawLevel === "ERROR" || rawLevel === "ERR" || rawLevel === "CRIT" || rawLevel === "EMERG" || rawLevel === "ALERT")
+      return "APACHE_ERROR";
+
+    // Notice/info level events that didn't match anything specific
+    return "APACHE_NOTICE";
   }
 
   private parseApacheAccessTimestamp(timestampStr: string): Date {

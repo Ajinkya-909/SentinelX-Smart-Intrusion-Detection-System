@@ -48,6 +48,19 @@ export const webMapping: FieldMapping = {
   message: ["request", "log_message", "message"],
 };
 
+// 1b. Apache Error Logs (distinct from access logs — different field structure)
+// Apache error logs have module, pid, and error messages instead of HTTP method/url/statusCode.
+// Using webMapping for these caused extractField() to find nothing, leaving action/request/error
+// metadata blocks empty and event_type stuck at UNKNOWN_EVENT.
+export const apacheErrorMapping: FieldMapping = {
+  timestamp: ["timestamp"],
+  sourceIp: ["sourceIp"],
+  logLevel: ["logLevel"],
+  message: ["message"],
+  eventType: ["metadata.event_type", "metadata.log_type"],
+  sessionId: ["metadata.pid"],
+};
+
 // 2. System & Auth Logs
 export const syslogMapping: FieldMapping = {
   timestamp: ["timestamp", "date", "time"],
@@ -134,7 +147,7 @@ export const fieldMappingsRegistry: ParserTypeMapping = {
   NGINX_ACCESS: webMapping,
   NGINX_ERROR: webMapping,
   APACHE_ACCESS: webMapping,
-  APACHE_ERROR: webMapping,
+  APACHE_ERROR: apacheErrorMapping,
   APACHE_LOG: webMapping,
   // System & Security Logs
   SYSLOG: syslogMapping,
@@ -226,6 +239,7 @@ export function normalizeEventType(value: any): string {
   // Directly pass through standard actions without fuzzy matching
   if (strValue.startsWith("HTTP_")) return strValue;
   if (strValue.startsWith("WINDOWS_EVENT_")) return strValue;
+  if (strValue.startsWith("APACHE_")) return strValue;
   if (
     [
       "LOGIN_ATTEMPT",
@@ -245,6 +259,19 @@ export function normalizeEventType(value: any): string {
       "SSH",
       "SMB",
       "DCERPC",
+      // Apache infrastructure events (set by apache.parser.ts classifyApacheErrorEvent)
+      "SERVICE_INIT",
+      "SERVICE_START",
+      "SERVICE_STOP",
+      "SERVICE_RESTART",
+      "MODULE_ERROR",
+      "PROCESS_SPAWN",
+      "PROCESS_EXIT",
+      "CONFIG_ERROR",
+      "PROXY_ERROR",
+      "FILE_NOT_FOUND",
+      "ACCESS_DENIED",
+      "TIMEOUT",
     ].includes(strValue)
   )
     return strValue;
