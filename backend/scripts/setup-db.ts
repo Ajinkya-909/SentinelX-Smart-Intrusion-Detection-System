@@ -4,12 +4,18 @@ import fs from "fs"
 import path from "path"
 
 async function setupDatabase() {
+  const useDocker = process.env.USE_DOCKER === "true";
+  const connectionString = useDocker
+    ? (process.env.DOCKER_DATABASE_URL || process.env.NEON_DATABASE_URL || process.env.DEFAULT_DATABASE_URL)
+    : (process.env.NEON_DATABASE_URL || process.env.DOCKER_DATABASE_URL || process.env.DEFAULT_DATABASE_URL);
+
   const pool = new Pool({
-    connectionString: process.env.NEON_DATABASE_URL || process.env.DOCKER_DATABASE_URL,
+    connectionString,
   })
 
   try {
-    console.log("🔌 Connecting to DB...")
+    const isNeon = connectionString === process.env.NEON_DATABASE_URL;
+    console.log(`🔌 Connecting to ${isNeon ? "Neon Online PostgreSQL" : "Docker/Local PostgreSQL"}...`)
 
     // 1. DANGER ZONE: Wipe the existing schema and all data completely
     console.log("🧹 Wiping existing database (dropping public schema)...")

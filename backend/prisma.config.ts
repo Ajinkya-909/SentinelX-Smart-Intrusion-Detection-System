@@ -1,5 +1,10 @@
 import "dotenv/config";
-import { defineConfig, env } from "prisma/config";
+import { defineConfig } from "prisma/config";
+
+const useDocker = process.env.USE_DOCKER === "true";
+const dbUrl = useDocker
+  ? (process.env.DOCKER_DATABASE_URL || process.env.NEON_DATABASE_URL || process.env.DEFAULT_DATABASE_URL)
+  : (process.env.NEON_DATABASE_URL || process.env.DOCKER_DATABASE_URL || process.env.DEFAULT_DATABASE_URL);
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
@@ -7,7 +12,6 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    // Explicitly load the URL from your.env file
-    url: env("DOCKER_DATABASE_URL"),
+    url: dbUrl || "",
   },
 });
