@@ -3,6 +3,8 @@ import app from "./app";
 import { initializePrisma } from "./config/db";
 import { initializeRedis } from "./config/redis";
 import { initializeQueue } from "./queue";
+import { initializeRecoveryQueue } from "./queue/recovery-queue";
+import { startWorker } from "./workers/job.worker";
 
 dotenv.config({
   path: "./.env",
@@ -25,6 +27,19 @@ const startServer = async () => {
       await initializeRedis();
       // Initialize job queue after Redis is ready
       initializeQueue();
+
+      // Start inline worker if not using separate Docker worker
+      // In cloud environments like Railway without shared volumes, this ensures
+      // the worker has access to the local uploaded files in /app/storage
+      const shouldRunWorker =
+        process.env.ENABLE_INLINE_WORKER === "true" ||
+        (process.env.USE_DOCKER !== "true" && process.env.ENABLE_INLINE_WORKER !== "false");
+
+      if (shouldRunWorker) {
+        initializeRecoveryQueue();
+        await startWorker();
+        console.log("[WORKER] ✅ Inline worker initialized and listening for jobs");
+      }
     } catch (error) {
       if (process.env.USE_DOCKER === "true") {
         console.error("❌ Redis initialization failed in docker-only mode:", error);

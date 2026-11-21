@@ -4,6 +4,10 @@ import cookieParser from "cookie-parser";
 
 const app = express();
 
+// Trust reverse proxy (Railway, Render, Vercel, Cloudflare, etc.)
+// Required for express-rate-limit to read X-Forwarded-For properly
+app.set("trust proxy", 1);
+
 app.use(express.json({ limit: "16kb" }));
 app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 app.use(express.static("public"));
