@@ -28,12 +28,12 @@ const startServer = async () => {
       // Initialize job queue after Redis is ready
       initializeQueue();
 
-      // Start inline worker if not using separate Docker worker
+      // Start inline worker unless explicitly using a separate worker process
       // In cloud environments like Railway without shared volumes, this ensures
       // the worker has access to the local uploaded files in /app/storage
       const shouldRunWorker =
-        process.env.ENABLE_INLINE_WORKER === "true" ||
-        (process.env.USE_DOCKER !== "true" && process.env.ENABLE_INLINE_WORKER !== "false");
+        process.env.SEPARATE_WORKER !== "true" &&
+        process.env.ENABLE_INLINE_WORKER !== "false";
 
       if (shouldRunWorker) {
         initializeRecoveryQueue();
