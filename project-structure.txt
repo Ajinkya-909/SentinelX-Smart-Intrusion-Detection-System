@@ -1,0 +1,564 @@
+SentinelX — Smart Intrusion Detection System
+├── backend
+│   ├── docker
+│   │   ├── .gitkeep
+│   │   └── docker-compose.yml
+│   ├── prisma
+│   │   └── schema.prisma
+│   ├── scratch
+│   │   └── test-geoip.ts
+│   ├── scripts
+│   │   ├── .gitkeep
+│   │   ├── create-extension.ts
+│   │   ├── schema.sql
+│   │   ├── setup-db.ts
+│   │   ├── test-detection-parsing.ts
+│   │   ├── test-phase-123-verification.ts
+│   │   └── test-pipeline-lines.ts
+│   ├── src
+│   │   ├── config
+│   │   │   ├── .gitkeep
+│   │   │   ├── db.ts
+│   │   │   ├── llm.config.ts
+│   │   │   ├── logger.ts
+│   │   │   └── redis.ts
+│   │   ├── constants
+│   │   │   └── upload.constants.ts
+│   │   ├── controllers
+│   │   │   ├── .gitkeep
+│   │   │   ├── auth.controller.ts
+│   │   │   ├── dashboard.controller.ts
+│   │   │   └── job.controller.ts
+│   │   ├── generated
+│   │   │   └── prisma
+│   │   │       ├── internal
+│   │   │       │   ├── class.ts
+│   │   │       │   ├── prismaNamespace.ts
+│   │   │       │   └── prismaNamespaceBrowser.ts
+│   │   │       ├── models
+│   │   │       │   ├── analyzer_findings.ts
+│   │   │       │   ├── insights.ts
+│   │   │       │   ├── jobs.ts
+│   │   │       │   ├── normalized_logs.ts
+│   │   │       │   └── users.ts
+│   │   │       ├── browser.ts
+│   │   │       ├── client.ts
+│   │   │       ├── commonInputTypes.ts
+│   │   │       ├── enums.ts
+│   │   │       └── models.ts
+│   │   ├── middlewares
+│   │   │   ├── .gitkeep
+│   │   │   ├── auth.middleware.ts
+│   │   │   ├── multer.middleware.ts
+│   │   │   ├── rateLimit.middleware.ts
+│   │   │   └── validator.middleware.ts
+│   │   ├── pipeline
+│   │   │   ├── analyzers
+│   │   │   │   ├── correlation
+│   │   │   │   │   ├── detectors
+│   │   │   │   │   │   ├── bruteForceCampaign.detector.ts
+│   │   │   │   │   │   ├── dataExfiltrationChain.detector.ts
+│   │   │   │   │   │   ├── lateralMovement.detector.ts
+│   │   │   │   │   │   ├── privilegeEscalationChain.detector.ts
+│   │   │   │   │   │   ├── reconExploitationChain.detector.ts
+│   │   │   │   │   │   └── sessionHijacking.detector.ts
+│   │   │   │   │   └── CorrelationAnalyzer.ts
+│   │   │   │   ├── ml
+│   │   │   │   │   ├── config
+│   │   │   │   │   │   └── ml.config.ts
+│   │   │   │   │   ├── features
+│   │   │   │   │   │   ├── buildIpFeatures.ts
+│   │   │   │   │   │   ├── buildSessionFeatures.ts
+│   │   │   │   │   │   └── buildUserFeatures.ts
+│   │   │   │   │   ├── types
+│   │   │   │   │   │   └── features.types.ts
+│   │   │   │   │   ├── index.ts
+│   │   │   │   │   ├── MLAnalyzer.ts
+│   │   │   │   │   └── MLClient.ts
+│   │   │   │   ├── orchestrator
+│   │   │   │   │   └── AnalyzerOrchestrator.ts
+│   │   │   │   ├── rule
+│   │   │   │   │   ├── detectors
+│   │   │   │   │   │   ├── accountTakeover.detector.ts
+│   │   │   │   │   │   ├── bruteForce.detector.ts
+│   │   │   │   │   │   ├── impossibleVelocity.detector.ts
+│   │   │   │   │   │   ├── maliciousUpload.detector.ts
+│   │   │   │   │   │   ├── pathTraversal.detector.ts
+│   │   │   │   │   │   ├── privilegeEscalation.detector.ts
+│   │   │   │   │   │   ├── rapidAuthVelocity.detector.ts
+│   │   │   │   │   │   ├── scannerBot.detector.ts
+│   │   │   │   │   │   ├── sqlInjection.detector.ts
+│   │   │   │   │   │   ├── suricata.detector.ts
+│   │   │   │   │   │   └── xss.detector.ts
+│   │   │   │   │   └── RuleAnalyzer.ts
+│   │   │   │   ├── shared
+│   │   │   │   │   ├── config
+│   │   │   │   │   │   └── analyzer.config.ts
+│   │   │   │   │   ├── context
+│   │   │   │   │   │   ├── AnalysisContext.ts
+│   │   │   │   │   │   └── buildAnalysisContext.ts
+│   │   │   │   │   ├── findings
+│   │   │   │   │   │   ├── createFinding.ts
+│   │   │   │   │   │   ├── Finding.types.ts
+│   │   │   │   │   │   └── FindingSeverity.ts
+│   │   │   │   │   ├── interfaces
+│   │   │   │   │   │   ├── Analyzer.interface.ts
+│   │   │   │   │   │   └── Detector.interface.ts
+│   │   │   │   │   ├── utils
+│   │   │   │   │   │   ├── correlation.util.ts
+│   │   │   │   │   │   ├── grouping.util.ts
+│   │   │   │   │   │   ├── slidingWindow.util.ts
+│   │   │   │   │   │   ├── statistics.util.ts
+│   │   │   │   │   │   └── timeline.util.ts
+│   │   │   │   │   └── index.ts
+│   │   │   │   ├── statistical
+│   │   │   │   │   ├── detectors
+│   │   │   │   │   │   ├── criticalEventSpike.detector.ts
+│   │   │   │   │   │   ├── dataTransferSpike.detector.ts
+│   │   │   │   │   │   ├── endpointDiversitySpike.detector.ts
+│   │   │   │   │   │   ├── errorRateSpike.detector.ts
+│   │   │   │   │   │   └── requestSpike.detector.ts
+│   │   │   │   │   └── StatisticalAnalyzer.ts
+│   │   │   │   ├── temporal
+│   │   │   │   │   ├── detectors
+│   │   │   │   │   │   ├── abnormalIntervals.detector.ts
+│   │   │   │   │   │   ├── longSession.detector.ts
+│   │   │   │   │   │   ├── midnightAccess.detector.ts
+│   │   │   │   │   │   ├── offHoursAdmin.detector.ts
+│   │   │   │   │   │   ├── rapidBurst.detector.ts
+│   │   │   │   │   │   └── reconnaissanceBurst.detector.ts
+│   │   │   │   │   └── TemporalAnalyzer.ts
+│   │   │   │   ├── .gitkeep
+│   │   │   │   ├── analyzer.service.ts
+│   │   │   │   └── index.ts
+│   │   │   ├── checkpoint
+│   │   │   │   └── checkpoint.service.ts
+│   │   │   ├── insights
+│   │   │   │   ├── .gitkeep
+│   │   │   │   ├── index.ts
+│   │   │   │   ├── insights.orchestrator.ts
+│   │   │   │   ├── insights.service.ts
+│   │   │   │   ├── llm.generator.ts
+│   │   │   │   └── llm.prompts.ts
+│   │   │   ├── normalizer
+│   │   │   │   ├── .gitkeep
+│   │   │   │   ├── mappings.ts
+│   │   │   │   ├── normalizer.service.ts
+│   │   │   │   └── types.ts
+│   │   │   ├── parser
+│   │   │   │   ├── strategies
+│   │   │   │   │   ├── apache.parser.ts
+│   │   │   │   │   ├── base.parser.ts
+│   │   │   │   │   ├── generic.parser.ts
+│   │   │   │   │   ├── index.ts
+│   │   │   │   │   ├── json.parser.ts
+│   │   │   │   │   ├── keyvalue.parser.ts
+│   │   │   │   │   ├── nginx.parser.ts
+│   │   │   │   │   └── syslog.parser.ts
+│   │   │   │   ├── .gitkeep
+│   │   │   │   ├── parser.service.ts
+│   │   │   │   └── types.ts
+│   │   │   ├── preprocessor
+│   │   │   │   └── preprocessor.service.ts
+│   │   │   ├── type-detector
+│   │   │   │   ├── detectors
+│   │   │   │   │   ├── .gitkeep
+│   │   │   │   │   ├── apache.detector.ts
+│   │   │   │   │   ├── base.detector.ts
+│   │   │   │   │   ├── cloudtrail.detector.ts
+│   │   │   │   │   ├── docker.detector.ts
+│   │   │   │   │   ├── firewall.detector.ts
+│   │   │   │   │   ├── generic.detector.ts
+│   │   │   │   │   ├── index.ts
+│   │   │   │   │   ├── json.detector.ts
+│   │   │   │   │   ├── keyvalue.detector.ts
+│   │   │   │   │   ├── nginx.detector.ts
+│   │   │   │   │   ├── suricata.detector.ts
+│   │   │   │   │   ├── syslog.detector.ts
+│   │   │   │   │   └── windows.detector.ts
+│   │   │   │   └── type-detector.service.ts
+│   │   │   └── orchestrator-simple.ts
+│   │   ├── queue
+│   │   │   ├── .gitkeep
+│   │   │   ├── index.ts
+│   │   │   ├── job.queue.ts
+│   │   │   └── recovery-queue.ts
+│   │   ├── repositories
+│   │   │   ├── .gitkeep
+│   │   │   ├── dashboard.repository.ts
+│   │   │   ├── index.ts
+│   │   │   ├── job.repository.ts
+│   │   │   ├── pipeline.repository.ts
+│   │   │   └── user.repository.ts
+│   │   ├── routes
+│   │   │   ├── .gitkeep
+│   │   │   ├── auth.routes.ts
+│   │   │   ├── dashboard.routes.ts
+│   │   │   └── job.routes.ts
+│   │   ├── scripts
+│   │   ├── services
+│   │   │   ├── files
+│   │   │   │   └── file.service.ts
+│   │   │   ├── jobs
+│   │   │   │   ├── job.service.ts
+│   │   │   │   └── upload.service.ts
+│   │   │   ├── pipeline
+│   │   │   │   └── pipeline.service.ts
+│   │   │   ├── .gitkeep
+│   │   │   ├── auth.service.ts
+│   │   │   └── dashboard.service.ts
+│   │   ├── types
+│   │   │   ├── api.types.ts
+│   │   │   ├── dashboard.types.ts
+│   │   │   ├── db.types.ts
+│   │   │   ├── insight.types.ts
+│   │   │   ├── job.types.ts
+│   │   │   ├── pipeline.types.ts
+│   │   │   └── queue.types.ts
+│   │   ├── utils
+│   │   │   ├── .gitkeep
+│   │   │   ├── api-error.ts
+│   │   │   ├── api-response.ts
+│   │   │   ├── async-handler.ts
+│   │   │   ├── dbConnection.ts
+│   │   │   ├── geoip.ts
+│   │   │   ├── jwt.ts
+│   │   │   └── redisConnection.ts
+│   │   ├── validators
+│   │   │   ├── .gitkeep
+│   │   │   ├── auth.validator.ts
+│   │   │   ├── insight.validator.ts
+│   │   │   └── upload.validator.ts
+│   │   ├── workers
+│   │   │   ├── .gitkeep
+│   │   │   ├── job.worker.ts
+│   │   │   └── worker.utils.ts
+│   │   ├── app.ts
+│   │   ├── index.ts
+│   │   └── worker.ts
+│   ├── storage
+│   │   ├── diagnostics
+│   │   ├── processed
+│   │   │   └── .gitkeep
+│   │   ├── temp
+│   │   │   └── .gitkeep
+│   │   └── uploads
+│   │       └── b1476bb2-6a10-4652-a3e9-8d72045bed7f
+│   ├── tests
+│   │   ├── e2e
+│   │   │   └── .gitkeep
+│   │   ├── integration
+│   │   │   └── .gitkeep
+│   │   ├── unit
+│   │   │   ├── .gitkeep
+│   │   │   ├── test-full-pipeline.ts
+│   │   │   └── test-preprocessor.ts
+│   │   ├── insights-generator.test.ts
+│   │   └── insights-validator.test.ts
+│   ├── .dockerignore
+│   ├── .env.example
+│   ├── .gitignore
+│   ├── Dockerfile
+│   ├── nodemon.json
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── prisma.config.ts
+│   └── tsconfig.json
+├── documentation
+│   ├── backend-data-layer
+│   │   ├── API Specification.md
+│   │   ├── Database Schema & Data Dictionary.md
+│   │   └── schema.sql
+│   ├── frontend
+│   │   └── Frontend Technical Design.md
+│   ├── high-level-strategy-architecture
+│   │   ├── Product Requirements Document.md
+│   │   └── System Architecture Document.md
+│   ├── machine-learning
+│   │   ├── Data Processing Pipeline.md
+│   │   └── ML Model Specification.md
+│   └── operational
+│       └── Deployment & Infrastructure Guide.md
+├── frontend
+│   ├── public
+│   │   ├── logo.png
+│   │   ├── robots.txt
+│   │   └── sitemap.xml
+│   ├── src
+│   │   ├── assets
+│   │   ├── components
+│   │   │   ├── dashboard
+│   │   │   │   ├── ActionPlanRemediationList.tsx
+│   │   │   │   ├── ActivityTimelineChart.tsx
+│   │   │   │   ├── AnomalySummaryCard.tsx
+│   │   │   │   ├── AttackPatternCard.tsx
+│   │   │   │   ├── EventTypeRadarChart.tsx
+│   │   │   │   ├── ExecutiveSummaryCard.tsx
+│   │   │   │   ├── GeoAnalysisMap.tsx
+│   │   │   │   ├── KpiMetricGrid.tsx
+│   │   │   │   ├── SecurityAlertFeed.tsx
+│   │   │   │   ├── SeverityDonutChart.tsx
+│   │   │   │   ├── ThreatSummaryCard.tsx
+│   │   │   │   ├── ThreatTimelineChart.tsx
+│   │   │   │   └── TopAttackersTable.tsx
+│   │   │   ├── landing
+│   │   │   │   └── Navbar.tsx
+│   │   │   ├── layout
+│   │   │   │   └── Sidebar.tsx
+│   │   │   ├── ui
+│   │   │   │   ├── accordion.tsx
+│   │   │   │   ├── alert-dialog.tsx
+│   │   │   │   ├── alert.tsx
+│   │   │   │   ├── aspect-ratio.tsx
+│   │   │   │   ├── avatar.tsx
+│   │   │   │   ├── badge.tsx
+│   │   │   │   ├── breadcrumb.tsx
+│   │   │   │   ├── button.tsx
+│   │   │   │   ├── calendar.tsx
+│   │   │   │   ├── card.tsx
+│   │   │   │   ├── carousel.tsx
+│   │   │   │   ├── chart.tsx
+│   │   │   │   ├── checkbox.tsx
+│   │   │   │   ├── collapsible.tsx
+│   │   │   │   ├── command.tsx
+│   │   │   │   ├── context-menu.tsx
+│   │   │   │   ├── dialog.tsx
+│   │   │   │   ├── drawer.tsx
+│   │   │   │   ├── dropdown-menu.tsx
+│   │   │   │   ├── form.tsx
+│   │   │   │   ├── hover-card.tsx
+│   │   │   │   ├── input-otp.tsx
+│   │   │   │   ├── input.tsx
+│   │   │   │   ├── label.tsx
+│   │   │   │   ├── menubar.tsx
+│   │   │   │   ├── navigation-menu.tsx
+│   │   │   │   ├── pagination.tsx
+│   │   │   │   ├── popover.tsx
+│   │   │   │   ├── progress.tsx
+│   │   │   │   ├── radio-group.tsx
+│   │   │   │   ├── resizable.tsx
+│   │   │   │   ├── scroll-area.tsx
+│   │   │   │   ├── select.tsx
+│   │   │   │   ├── separator.tsx
+│   │   │   │   ├── sheet.tsx
+│   │   │   │   ├── sidebar.tsx
+│   │   │   │   ├── skeleton.tsx
+│   │   │   │   ├── slider.tsx
+│   │   │   │   ├── sonner.tsx
+│   │   │   │   ├── switch.tsx
+│   │   │   │   ├── table.tsx
+│   │   │   │   ├── tabs.tsx
+│   │   │   │   ├── textarea.tsx
+│   │   │   │   ├── toast.tsx
+│   │   │   │   ├── toaster.tsx
+│   │   │   │   ├── toggle-group.tsx
+│   │   │   │   ├── toggle.tsx
+│   │   │   │   ├── tooltip.tsx
+│   │   │   │   └── use-toast.ts
+│   │   │   ├── JobCompleted.tsx
+│   │   │   ├── JobProcessing.tsx
+│   │   │   └── TestDataFetch.tsx
+│   │   ├── constants
+│   │   │   └── sampleInsightData.ts
+│   │   ├── context
+│   │   │   └── AuthContext.tsx
+│   │   ├── hooks
+│   │   │   ├── index.ts
+│   │   │   ├── use-mobile.tsx
+│   │   │   ├── use-toast.ts
+│   │   │   ├── useFetchJobDetail.ts
+│   │   │   └── useJobActions.ts
+│   │   ├── layouts
+│   │   │   ├── DashboardLayout.tsx
+│   │   │   └── RouteWrappers.tsx
+│   │   ├── lib
+│   │   │   ├── utils.ts
+│   │   │   └── validation.ts
+│   │   ├── pages
+│   │   │   ├── ColorPalette.tsx
+│   │   │   ├── Dashboard.tsx
+│   │   │   ├── Home.tsx
+│   │   │   ├── JobDetail.tsx
+│   │   │   ├── JobResultDashboard.tsx
+│   │   │   ├── Jobs.tsx
+│   │   │   ├── JobUpload.tsx
+│   │   │   ├── Login.tsx
+│   │   │   ├── PublicJobResultDashboard.tsx
+│   │   │   ├── Settings.tsx
+│   │   │   └── Signup.tsx
+│   │   ├── services
+│   │   │   ├── api.ts
+│   │   │   ├── auth.ts
+│   │   │   ├── dashboard.ts
+│   │   │   ├── index.ts
+│   │   │   ├── job.ts
+│   │   │   ├── jobDetail.ts
+│   │   │   └── report.ts
+│   │   ├── store
+│   │   ├── styles
+│   │   ├── test
+│   │   ├── types
+│   │   │   ├── dashboard.ts
+│   │   │   ├── insight.ts
+│   │   │   └── job.ts
+│   │   ├── App.css
+│   │   ├── App.tsx
+│   │   ├── index.css
+│   │   ├── main.tsx
+│   │   └── vite-env.d.ts
+│   ├── .dockerignore
+│   ├── .env.example
+│   ├── .env.local
+│   ├── .gitignore
+│   ├── components.json
+│   ├── Dockerfile
+│   ├── eslint.config.js
+│   ├── index.html
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── postcss.config.js
+│   ├── tailwind.config.ts
+│   ├── tsconfig.app.json
+│   ├── tsconfig.json
+│   ├── tsconfig.node.json
+│   ├── vercel.json
+│   ├── vite.config.ts
+│   └── vitest.config.ts
+├── ml-service
+│   ├── app
+│   │   ├── api
+│   │   │   ├── routes
+│   │   │   │   └── health.py
+│   │   │   ├── __init__.py
+│   │   │   ├── analysis.py
+│   │   │   └── health.py
+│   │   ├── config
+│   │   │   ├── __init__.py
+│   │   │   └── settings.py
+│   │   ├── models
+│   │   │   ├── data
+│   │   │   ├── __init__.py
+│   │   │   ├── dbscan_model.py
+│   │   │   └── isolation_forest_model.py
+│   │   ├── schemas
+│   │   │   ├── __init__.py
+│   │   │   ├── request.py
+│   │   │   └── response.py
+│   │   ├── services
+│   │   │   ├── __init__.py
+│   │   │   ├── dbscan_service.py
+│   │   │   ├── isolation_forest_service.py
+│   │   │   ├── orchestrator_service.py
+│   │   │   └── preprocessing_service.py
+│   │   ├── utils
+│   │   │   ├── __init__.py
+│   │   │   ├── risk_mapper.py
+│   │   │   ├── validators.py
+│   │   │   └── vector_utils.py
+│   │   ├── __init__.py
+│   │   └── main.py
+│   ├── tests
+│   │   ├── __init__.py
+│   │   ├── conftest.py
+│   │   ├── test_api_endpoints.py
+│   │   ├── test_dbscan_service.py
+│   │   ├── test_e2e_pipeline.py
+│   │   ├── test_isolation_forest_service.py
+│   │   ├── test_load_performance.py
+│   │   ├── test_orchestrator_service.py
+│   │   └── test_preprocessing_service.py
+│   ├── .dockerignore
+│   ├── .env.example
+│   ├── .gitignore
+│   ├── Dockerfile
+│   ├── pytest.ini
+│   ├── README.md
+│   ├── requirements.txt
+│   ├── run_tests.py
+│   └── test_results.txt
+├── plan
+│   ├── Frontend
+│   │   ├── 2.0 stitch_sentinelx_intrusion_detection_dashboard
+│   │   │   ├── authentication_gateway.html
+│   │   │   ├── authentication_gateway.png
+│   │   │   ├── global_dashboard.html
+│   │   │   ├── global_dashboard.png
+│   │   │   ├── job_controller_completed.html
+│   │   │   ├── job_controller_completed.png
+│   │   │   ├── jobs_hub.html
+│   │   │   ├── jobs_hub.png
+│   │   │   ├── upload_initialization.html
+│   │   │   └── upload_initialization.png
+│   │   ├── sentinelx_ids_platform
+│   │   │   ├── 2.webp.png
+│   │   │   ├── 3.webp.png
+│   │   │   ├── 4.webp.png
+│   │   │   ├── authentication_gateway_sentinelx.png
+│   │   │   ├── dashboard_sentinelx.png
+│   │   │   ├── DESIGN.md
+│   │   │   ├── design.md_1.md
+│   │   │   ├── design.md_2.md
+│   │   │   ├── home_sentinelx.png
+│   │   │   ├── job_controller_completed_sentinelx.png
+│   │   │   ├── job_controller_processing_sentinelx.png
+│   │   │   ├── jobs_hub_sentinelx.png
+│   │   │   ├── screen.png.png
+│   │   │   ├── security_intelligence_report_sentinelx.png
+│   │   │   ├── security_report_sentinelx.png
+│   │   │   ├── sentinelx_frontend_specification.md
+│   │   │   └── upload_job_sentinelx.png
+│   │   ├── stitch_sentinelx_frontend_architecture
+│   │   │   ├── upload_logs_sentinelx_1.html
+│   │   │   └── upload_logs_sentinelx_1.png
+│   │   ├── contex.txt
+│   │   └── sentinelx_project_prd.md
+│   ├── PipelineContext
+│   │   ├── Analyzer Development
+│   │   │   ├── ctx
+│   │   │   │   ├── context ( Analyzers and RequiredTables ).txt
+│   │   │   │   ├── sentinelx_analyzer_architecture_advanced_scalability_and_future_evolution.md
+│   │   │   │   ├── sentinelx_analyzer_architecture_and_engineering_guide_v_1.md
+│   │   │   │   └── sentinelx_analyzer_architecture_continuation_post_shared_utility_layer.md
+│   │   │   ├── ml-service
+│   │   │   │   ├── develpoment_phases.md
+│   │   │   │   └── ML_Analyser.context.txt
+│   │   │   ├── Analyzer-Rules-Specification.md
+│   │   │   ├── development.md
+│   │   │   └── Engineering-Risk-Mitigation-Plan.md
+│   │   ├── debugging TypeDetection Problem
+│   │   │   ├── Log Analysis Pipeline Improvement.txt
+│   │   │   └── ParserProblemPotentialSolution.txt
+│   │   ├── Insights Development
+│   │   │   ├── guideline.txt
+│   │   │   ├── Insights.context.txt
+│   │   │   ├── llmResponse.txt
+│   │   │   └── Soluiton.txt
+│   │   ├── Preprocessing-Normalization
+│   │   │   ├── context (PreProcessing - Normalization).txt
+│   │   │   ├── FixedIssue.md
+│   │   │   ├── Normalization.context.txt
+│   │   │   ├── Parsing.context.txt
+│   │   │   ├── Preprossing.context.txt
+│   │   │   └── Type-Detection.context.txt
+│   │   ├── pipeline_review.md
+│   │   └── walkthrough.md
+│   ├── FolderFunctioning.md
+│   ├── GIT_COMMANDS.md
+│   ├── Planning.md
+│   ├── StructureForTS.md
+│   ├── StructureOld.md
+│   └── Type System Document.md
+├── sentinelx_test_logs
+│   ├── apache_logs
+│   ├── auth_log_anomalies
+│   ├── firewall_logs
+│   ├── nginx_logs
+│   ├── ssh_bruteforce
+│   ├── syslog_logs
+│   └── windows_event_logs
+├── .gitignore
+├── docker-compose.yml
+├── final_sentinelx_test_logs.zip
+├── LICENSE
+├── project-structure.js
+└── README.md
