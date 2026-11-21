@@ -8,6 +8,7 @@
     "worker": "nodemon --require tsconfig-paths/register --exec ts-node src/worker.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "db:deploy": "ts-node scripts/create-extension.ts && prisma db push --accept-data-loss",
     "test:preprocess": "ts-node scripts/test-preprocessor.ts"
   },
   "keywords": [

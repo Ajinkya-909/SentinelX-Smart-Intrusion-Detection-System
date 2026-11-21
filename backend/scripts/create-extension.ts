@@ -4,12 +4,12 @@ import { Pool } from "pg";
 async function createExtension() {
   const useDocker = process.env.USE_DOCKER === "true";
   const connectionString = useDocker
-    ? (process.env.DOCKER_DATABASE_URL || process.env.NEON_DATABASE_URL || process.env.DEFAULT_DATABASE_URL)
-    : (process.env.NEON_DATABASE_URL || process.env.DOCKER_DATABASE_URL || process.env.DEFAULT_DATABASE_URL);
+    ? (process.env.DOCKER_DATABASE_URL || process.env.DATABASE_URL || process.env.NEON_DATABASE_URL || process.env.DEFAULT_DATABASE_URL)
+    : (process.env.DATABASE_URL || process.env.NEON_DATABASE_URL || process.env.DOCKER_DATABASE_URL || process.env.DEFAULT_DATABASE_URL);
 
   if (!connectionString) {
     console.error(
-      "❌ No database connection URL found. Set USE_DOCKER, DOCKER_DATABASE_URL, NEON_DATABASE_URL, or DEFAULT_DATABASE_URL in .env",
+      "❌ No database connection URL found. Set DATABASE_URL, USE_DOCKER, DOCKER_DATABASE_URL, NEON_DATABASE_URL, or DEFAULT_DATABASE_URL in .env",
     );
     process.exit(1);
   }

@@ -105,23 +105,29 @@ export async function getDatabaseUrl(): Promise<string> {
         return dockerUrl;
       }
     } catch (error) {
-      console.log("⚠️  Docker check failed, trying Neon");
+      console.log("⚠️  Docker check failed, trying other connections");
     }
   }
 
-  // Priority 2: Use Neon if available
+  // Priority 2: Use direct DATABASE_URL if available (standard in Railway/production)
+  if (process.env.DATABASE_URL) {
+    console.log("🌐 Using DATABASE_URL from environment");
+    return process.env.DATABASE_URL;
+  }
+
+  // Priority 3: Use Neon if available
   if (neonUrl) {
     console.log("🌐 Using Neon Online PostgreSQL");
     return neonUrl;
   }
 
-  // Priority 3: Use default
+  // Priority 4: Use default
   if (defaultUrl) {
     console.log("📋 Using Default PostgreSQL");
     return defaultUrl;
   }
 
   throw new Error(
-    "No database URL configured! Set DOCKER_DATABASE_URL, NEON_DATABASE_URL, or DEFAULT_DATABASE_URL"
+    "No database URL configured! Set DATABASE_URL, DOCKER_DATABASE_URL, NEON_DATABASE_URL, or DEFAULT_DATABASE_URL"
   );
 }

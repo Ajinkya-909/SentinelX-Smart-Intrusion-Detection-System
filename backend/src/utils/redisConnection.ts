@@ -105,23 +105,29 @@ export async function getRedisUrl(): Promise<string> {
         return dockerUrl;
       }
     } catch (error) {
-      console.log("⚠️  Docker Redis check failed, trying Upstash");
+      console.log("⚠️  Docker Redis check failed, trying other connections");
     }
   }
 
-  // Priority 2: Use Upstash if available
+  // Priority 2: Use direct REDIS_URL if available (standard in Railway/production)
+  if (process.env.REDIS_URL) {
+    console.log("🌐 Using REDIS_URL from environment");
+    return process.env.REDIS_URL;
+  }
+
+  // Priority 3: Use Upstash if available
   if (upstashUrl) {
     console.log("☁️ Using Upstash Redis");
     return upstashUrl;
   }
 
-  // Priority 3: Use default
+  // Priority 4: Use default
   if (defaultUrl) {
     console.log("📋 Using Default Redis");
     return defaultUrl;
   }
 
   throw new Error(
-    "No Redis URL configured! Set DOCKER_REDIS_URL, UPSTASH_REDIS_URL, or DEFAULT_REDIS_URL"
+    "No Redis URL configured! Set REDIS_URL, DOCKER_REDIS_URL, UPSTASH_REDIS_URL, or DEFAULT_REDIS_URL"
   );
 }
